@@ -31,7 +31,7 @@ if os.getenv("USE_BEDROCK", "False").lower() == "true":
     model_kwargs = {
         "max_tokens": 1028,
         "temperature": 0.3,
-        "model_id": os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
+        "model_id": os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
     }
     
     if guardrail_id:
@@ -160,7 +160,7 @@ def get_hr_agent_response(question: str) -> str:
     model_provider = "bedrock" if use_bedrock else "anthropic"
     
     if use_bedrock:
-        model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
+        model_id = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
     else:
         model_id = os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219")
     

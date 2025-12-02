@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     use_bedrock: bool = os.getenv("USE_BEDROCK", "False").lower() == "true"
     
     # Bedrock model ID for Claude
-    bedrock_model_id: str = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
+    bedrock_model_id: str = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
     
     # Bedrock Guardrails
     bedrock_guardrail_id: Optional[str] = os.getenv("BEDROCK_GUARDRAIL_ID")
@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     
     # Agent settings
-    default_model: str = os.getenv("DEFAULT_MODEL", "anthropic.claude-haiku-4-5-20251001-v1:0")
+    default_model: str = os.getenv("DEFAULT_MODEL", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
     max_tokens: int = int(os.getenv("MAX_TOKENS", "1028"))
     temperature: float = float(os.getenv("TEMPERATURE", "0.3"))
     

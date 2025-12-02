@@ -51,7 +51,7 @@ if USE_BEDROCK:
     model_kwargs = {
         "max_tokens": 2048,
         "temperature": 0.3,
-        "model_id": os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
+        "model_id": os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
     }
     
     if guardrail_id:
