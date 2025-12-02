@@ -156,7 +156,7 @@ class DocumentRAG:
     # Answer Generation
     # ------------------------------------------------------------------ #
 
-    def query(self, query: str, k: int = 3, doc_id: Optional[str] = None) -> Tuple[str, List[str]]:
+    def query(self, query: str, k: int = 1, doc_id: Optional[str] = None) -> Tuple[str, List[str]]:
         """
         Query the knowledge base and return (answer, source_document_names).
         """
@@ -218,42 +218,19 @@ class DocumentRAG:
             )
 
         except Exception as e:
-            logger.error(f"Vector DB error: {e}")
-            sources = ["Sample Data"]
-
-            context = """
-Document: Employee Handbook
-- Work hours: 9 AM - 5 PM
-- PTO: 20 days per year
-"""
-
-            # Fallback system prompt when vector DB is unavailable
+            logger.error(f"Vector DB retrieval error: {e}")
+            sources = []
+            
+            # If no documents are found or DB is down, return a clear message rather than fake data
             system_prompt = (
-                "You are an internal Company Knowledge Assistant for employees.\n\n"
-                "The real document database is temporarily unavailable.\n"
-                "You have access ONLY to the following SAMPLE context, which may not fully match the real company.\n\n"
-                "You MUST still answer in the exact JSON format described below, and you MUST NOT invent policies not present in the sample.\n\n"
-                "SAMPLE CONTEXT:\n"
-                "--- BEGIN SAMPLE CONTEXT ---\n"
-                f"{context}\n"
-                "--- END SAMPLE CONTEXT ---\n\n"
-                "Respond using this JSON schema (no extra text before or after):\n\n"
+                "You are an internal Company Knowledge Assistant.\n"
+                "The user asked a question, but no relevant documents could be found in the system to answer it.\n\n"
+                "You MUST respond with this exact JSON structure:\n"
                 "{\n"
-                '  "answer_markdown": "<full, well-formatted answer in GitHub-flavored Markdown. Use tables if helpful.>",\n'
-                '  "sources": [\n'
-                "    {\n"
-                '      "title": "<document name from the sample context>",\n'
-                '      "url": "<file path or URL if available>",\n'
-                '      "breadcrumbs": "<short description of where in the document this came from>"\n'
-                "    }\n"
-                "  ],\n"
-                '  "follow_up_questions": [\n'
-                '    "<natural language follow-up question 1>",\n'
-                '    "<follow-up question 2>"\n'
-                "  ],\n"
-                '  "user_notices": [\n'
-                '    "<disclaimers or caveats, for example: Sample data only – verify with HR before relying on this information>"\n'
-                "  ]\n"
+                '  "answer_markdown": "I could not find any information regarding your query in the uploaded documents. Please ensure you have uploaded the relevant documents and try again.",\n'
+                '  "sources": [],\n'
+                '  "follow_up_questions": [],\n'
+                '  "user_notices": ["No relevant documents found"]\n'
                 "}\n"
             )
 

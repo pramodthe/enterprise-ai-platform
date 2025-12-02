@@ -15,7 +15,7 @@ import {
     Trash2,
     Database
 } from 'lucide-react';
-import { documentsQuery, listDocuments, deleteDocument } from '../services/api';
+import { documentsQuery, listDocuments, deleteDocument, uploadDocument } from '../services/api';
 import MarkdownRenderer from './MarkdownRenderer';
 
 
@@ -26,6 +26,9 @@ import MarkdownRenderer from './MarkdownRenderer';
  */
 
 const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles }) => {
+    const fileInputRef = useRef(null);
+    const [isUploading, setIsUploading] = useState(false);
+
     const handleDelete = async (id) => {
         try {
             await deleteDocument(id);
@@ -50,6 +53,47 @@ const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles 
         onDocumentSelect(id === selectedDocumentId ? null : id);
     };
 
+    const handleUploadClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setIsUploading(true);
+        try {
+            const response = await uploadDocument(file, (progressEvent) => {
+                // Optional: Handle upload progress
+                const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+                console.log(`Upload progress: ${percentCompleted}%`);
+            });
+
+            // Add the new file to the list
+            // The backend returns { message: "...", document_id: "..." }
+            // We need to construct the file object for the UI
+            // Assuming document_id is the filename as per backend logic
+            const newFile = {
+                id: response.document_id,
+                name: file.name,
+                type: file.type || 'application/pdf',
+                date: new Date().toLocaleDateString(),
+                isActive: false
+            };
+
+            setFiles(prev => [newFile, ...prev]);
+        } catch (error) {
+            console.error("Failed to upload document:", error);
+            alert("Failed to upload document. Please try again.");
+        } finally {
+            setIsUploading(false);
+            // Reset input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+        }
+    };
+
     return (
         // Changed w-80 to w-64 for a narrower sidebar
         <div className="w-64 bg-white border-r border-slate-200 flex flex-col h-full flex-shrink-0">
@@ -62,10 +106,27 @@ const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles 
                     </h2>
                 </div>
 
+                {/* Hidden File Input */}
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileChange}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt,.md"
+                />
+
                 {/* Modern Upload Button: Dashed border, no background, smaller size */}
-                <button className="w-full group flex items-center justify-center gap-2 border border-dashed border-slate-300 hover:border-purple-400 bg-transparent hover:bg-purple-50/30 text-slate-500 hover:text-purple-600 py-2 rounded-lg transition-all duration-200">
-                    <Upload className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-600" />
-                    <span className="text-sm font-medium">Upload Document</span>
+                <button
+                    onClick={handleUploadClick}
+                    disabled={isUploading}
+                    className="w-full group flex items-center justify-center gap-2 border border-dashed border-slate-300 hover:border-purple-400 bg-transparent hover:bg-purple-50/30 text-slate-500 hover:text-purple-600 py-2 rounded-lg transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    {isUploading ? (
+                        <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-purple-600 rounded-full animate-spin"></div>
+                    ) : (
+                        <Upload className="w-3.5 h-3.5 text-slate-400 group-hover:text-purple-600" />
+                    )}
+                    <span className="text-sm font-medium">{isUploading ? 'Uploading...' : 'Upload Document'}</span>
                 </button>
             </div>
 
@@ -246,7 +307,10 @@ const DocumentQuery = () => {
 
     // Scroll to bottom helper
     const scrollToBottom = () => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        // Only scroll if there are user messages or more than just the welcome message
+        if (messages.length > 1) {
+            messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+        }
     };
 
     useEffect(() => {
@@ -256,14 +320,10 @@ const DocumentQuery = () => {
     // Initial Welcome Message
     useEffect(() => {
         const initialBackendResponse = {
-            answer_markdown: "## Welcome! 👋\n\nHello! I'm your internal Company Knowledge Assistant. I'm here to help you find information from our company documents and policies.\n\nI can help you with questions about:\n- Company policies and procedures\n- Benefits and HR information\n- Onboarding and training\n- Workflows and processes\n- And much more!\n\n**How to get started:**\n- Ask me any question about company policies or procedures\n- Be as specific as possible for the best results\n- I'll provide answers based only on our official company documents\n\nWhat would you like to know?",
+            answer_markdown: "## Welcome! 👋\n\nI'm your Company Knowledge Assistant. I can help you find information in our documents.\n\n**How to get started:**\n- Upload the document.\n- Select the document.\n- Ask specific questions.\n\nWhat would you like to know?",
             short_answer: "Hello! I'm your Company Knowledge Assistant. Ask me anything about company policies, procedures, or information from our internal documents.",
             sources: [],
-            follow_up_questions: [
-                "What are the company's PTO policies?",
-                "How do I submit an expense report?",
-                "What benefits are available to employees?"
-            ],
+            follow_up_questions: [],
             related_topics: [
                 "Getting Started",
                 "Company Policies",
@@ -289,13 +349,22 @@ const DocumentQuery = () => {
                 // Let's assume it returns { name: "filename", ... }
                 // We need to map it to { id: "filename", name: "filename", type: "...", date: "..." }
                 // Using filename as ID for now as per backend logic
-                const mappedFiles = docs.map(doc => ({
-                    id: doc.name, // Using filename as ID since backend uses it for deletion
-                    name: doc.name,
-                    type: 'application/pdf', // Placeholder or derive from extension
-                    date: new Date(doc.created_at || Date.now()).toLocaleDateString(),
-                    isActive: false
-                }));
+                const mappedFiles = docs.map(doc => {
+                    // Extract original filename from timestamped name (e.g. "1740963365_filename.pdf")
+                    // The backend prepends a timestamp and underscore
+                    const nameParts = doc.name.split('_');
+                    const displayName = nameParts.length > 1 && /^\d+$/.test(nameParts[0])
+                        ? nameParts.slice(1).join('_')
+                        : doc.name;
+
+                    return {
+                        id: doc.name, // Using filename as ID since backend uses it for deletion
+                        name: displayName,
+                        type: 'application/pdf', // Placeholder or derive from extension
+                        date: new Date(doc.created_at || Date.now()).toLocaleDateString(),
+                        isActive: false
+                    };
+                });
                 setFiles(mappedFiles);
             } catch (error) {
                 console.error("Failed to fetch documents:", error);
@@ -322,8 +391,8 @@ const DocumentQuery = () => {
                 const selectedFile = files.find(f => f.id === selectedDocumentId);
                 if (selectedFile) {
                     // In a real implementation, you would use the actual document ID from your backend
-                    // For now, using a placeholder based on the mock ID
-                    documentId = selectedFile.name; // This would be the actual document identifier from your backend
+                    // Use the ID (which is the full filename with timestamp) as the document identifier
+                    documentId = selectedFile.id;
                 }
             }
 
@@ -472,7 +541,7 @@ const DocumentQuery = () => {
                 <header className="bg-white border-b border-slate-200 py-3 px-6 flex items-center justify-between sticky top-0 z-10">
                     <div>
                         <h1 className="text-lg font-bold text-slate-800">Internal Assistant</h1>
-                        <p className="text-xs text-slate-500">Connected to Company Drive, Confluence, and Jira</p>
+                        <p className="text-xs text-slate-500">Upload documents to document intellegence</p>
                     </div>
                     <button className="p-2 text-slate-400 hover:text-slate-600">
                         <HelpCircle className="w-5 h-5" />
@@ -505,24 +574,33 @@ const DocumentQuery = () => {
                 {/* Input Area */}
                 <div className="p-4 bg-white border-t border-slate-200">
                     <div className="max-w-4xl mx-auto relative">
-                        <textarea
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            placeholder="Ask a question about company policies..."
-                            className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl pl-4 pr-14 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 resize-none min-h-[56px] max-h-32"
-                            rows={1}
-                        />
-                        <button
-                            onClick={() => handleSend()}
-                            disabled={!input.trim() || isLoading}
-                            className={`absolute right-2 top-2 p-2 rounded-lg transition-colors ${input.trim()
-                                ? 'bg-purple-600 text-white hover:bg-purple-700'
-                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                }`}
-                        >
-                            <Send className="w-3.5 h-3.5" />
-                        </button>
+                        {selectedDocumentId ? (
+                            <>
+                                <textarea
+                                    value={input}
+                                    onChange={(e) => setInput(e.target.value)}
+                                    onKeyDown={handleKeyDown}
+                                    placeholder="Ask a question about this document..."
+                                    className="w-full bg-slate-50 border border-slate-200 text-slate-900 text-sm rounded-xl pl-4 pr-14 py-3 focus:outline-none focus:ring-2 focus:ring-purple-500/20 focus:border-purple-500 resize-none min-h-[56px] max-h-32"
+                                    rows={1}
+                                />
+                                <button
+                                    onClick={() => handleSend()}
+                                    disabled={!input.trim() || isLoading}
+                                    className={`absolute right-2 top-2 p-2 rounded-lg transition-colors ${input.trim()
+                                        ? 'bg-purple-600 text-white hover:bg-purple-700'
+                                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                        }`}
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                </button>
+                            </>
+                        ) : (
+                            <div className="w-full bg-slate-50 border border-slate-200 text-slate-400 text-sm rounded-xl px-4 py-3 flex items-center justify-center gap-2 cursor-not-allowed select-none">
+                                <AlertCircle className="w-4 h-4" />
+                                <span>Please select a document from the library to start chatting</span>
+                            </div>
+                        )}
                     </div>
                     <div className="text-center mt-2">
                         <p className="text-[10px] text-slate-400">
