@@ -1,7 +1,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import AgentCard from '../components/AgentCard';
-import { ISearch, ISliders, IUsers, IChart, IFileSearch } from '../components/icons';
+import { ISearch, IUsers, IChart, IFileSearch } from '../components/icons';
 import { agentsStatus } from '../services/api';
 
 function cx(...cls) { return cls.filter(Boolean).join(' '); }
@@ -45,7 +45,7 @@ const Dashboard = ({ onNavigate }) => {
       try {
         const res = await agentsStatus();
         if (res?.agents) dispatch({ type: 'agents/setAgents', payload: res.agents });
-      } catch (e) {}
+      } catch (e) { }
     })();
   }, [dispatch]);
 
@@ -59,8 +59,8 @@ const Dashboard = ({ onNavigate }) => {
           <input id="global-search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search agents, skills, or actions…" className="w-full pl-12 pr-4 py-3.5 rounded-2xl bg-white border border-gray-300 text-gray-900 placeholder-gray-400 shadow-sm focus:outline-none focus:ring-4 focus:ring-blue-100 focus:border-blue-400 transition-all" />
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl border border-gray-300 bg-white text-sm font-medium text-gray-700 shadow-sm" type="button"><ISliders /> Filters</button>
-          {['people','analysis','knowledge'].map((id) => {
+
+          {['people', 'analysis', 'knowledge'].map((id) => {
             const active = activeFilters.includes(id);
             const label = { people: 'People Ops', analysis: 'Analytics', knowledge: 'Knowledge' }[id];
             return (

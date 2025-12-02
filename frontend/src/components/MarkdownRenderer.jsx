@@ -51,8 +51,16 @@ const renderTable = (rows, key) => {
 };
 
 // A lightweight Markdown parser
-const MarkdownRenderer = ({ content }) => {
+const MarkdownRenderer = ({ content, themeColor = 'purple' }) => {
     if (!content) return null;
+
+    const bulletColors = {
+        purple: 'bg-purple-500',
+        emerald: 'bg-emerald-500',
+        indigo: 'bg-indigo-500',
+        blue: 'bg-blue-500',
+    };
+    const bulletClass = bulletColors[themeColor] || bulletColors.purple;
 
     const lines = content.split('\n');
     const rendered = [];
@@ -91,7 +99,7 @@ const MarkdownRenderer = ({ content }) => {
         if (trimmed.startsWith('- ')) {
             rendered.push(
                 <div key={index} className="flex items-start gap-2 ml-1 mb-1">
-                    <span className="mt-1.5 w-1.5 h-1.5 bg-purple-500 rounded-full flex-shrink-0" />
+                    <span className={`mt-1.5 w-1.5 h-1.5 ${bulletClass} rounded-full flex-shrink-0`} />
                     <span className="text-slate-700 leading-normal text-xs">
                         {parseInlineStyles(trimmed.replace('- ', ''))}
                     </span>

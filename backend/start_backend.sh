@@ -37,6 +37,10 @@ else
     docker run -d -p 6333:6333 --name qdrant qdrant/qdrant
 fi
 
+# Start Analytics Agent
+echo "📊 Starting Analytics Agent MCP Server..."
+python agents/analytics_agent.py server &
+
 # 3. Start Backend
 echo "🔥 Starting FastAPI Backend..."
 # Using python main.py as it handles the sys.path appending

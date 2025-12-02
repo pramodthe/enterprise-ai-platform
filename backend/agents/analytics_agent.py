@@ -1,329 +1,434 @@
 """
-Analytics Agent for the Enterprise AI Assistant Platform
-Using MCP calculator tools adapted
+ANALYTICS AGENT - Fixed for Chart Rendering
 """
+
 import os
-import threading
-import time
+import sys
 import logging
-from typing import Dict, Any, Optional
+import json
+import base64
+import io
+import pandas as pd
+import re
+
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 from dotenv import load_dotenv
 
-# Load environment variables first
 load_dotenv()
-
-# Import Opik tracing utilities
-from backend.core.opik_config import is_tracing_enabled, get_opik_metadata, get_session_id
-
-# Configure logging
 logger = logging.getLogger(__name__)
 
-# Check if using Bedrock or direct Anthropic API
-if os.getenv("USE_BEDROCK", "False").lower() == "true":
-    # Use AWS Bedrock
+USE_BEDROCK = os.getenv("USE_BEDROCK", "False").lower() == "true"
+
+if USE_BEDROCK:
     from strands import Agent
     from strands.models.bedrock import BedrockModel
-    from strands.tools.mcp.mcp_client import MCPClient
-    from mcp.client.streamable_http import streamablehttp_client
-    from mcp.server import FastMCP
+    import boto3
+
+    bedrock_runtime = boto3.client(
+        "bedrock-runtime",
+        region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
+    )
+
+    model = BedrockModel(
+        max_tokens=2048,
+        temperature=0.3,
+        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+    )
+
 else:
     from strands import Agent
     from strands.models.anthropic import AnthropicModel
-    from strands.tools.mcp.mcp_client import MCPClient
-    from mcp.client.streamable_http import streamablehttp_client
-    from mcp.server import FastMCP
 
-# Initialize model based on configuration
-if os.getenv("USE_BEDROCK", "False").lower() == "true":
-    import boto3
-    bedrock_runtime = boto3.client(
-        "bedrock-runtime",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-    )
-    model = BedrockModel(
-        client=bedrock_runtime,
-        max_tokens=1028,
-        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-v1:0"),
-        temperature=0.3
-    )
-else:
     model = AnthropicModel(
-        client_args={"api_key": os.getenv("api_key")},  # Required API key
-        max_tokens=1028,
-        model_id=os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219"),
-        params={"temperature": 0.3}
+        client_args={"api_key": os.getenv("api_key")},
+        max_tokens=2048,
+        params={"temperature": 0.2},
+        model_id=os.getenv("DEFAULT_MODEL", "claude-3-haiku-20240307")
     )
 
-def start_analytics_mcp_server():
-    """
-    Start an MCP server with analytics tools (now includes a simplified US payroll tool).
-    """
-    mcp = FastMCP("Analytics Server")
 
-    # -----------------------------
-    # Basic calculation tools
-    # -----------------------------
-    @mcp.tool(description="Add two numbers together")
-    def add(x: float, y: float) -> float:
-        return x + y
-
-    @mcp.tool(description="Subtract one number from another")
-    def subtract(x: float, y: float) -> float:
-        return x - y
-
-    @mcp.tool(description="Multiply two numbers together")
-    def multiply(x: float, y: float) -> float:
-        return x * y
-
-    @mcp.tool(description="Divide one number by another")
-    def divide(x: float, y: float) -> float:
-        if y == 0:
-            raise ValueError("Cannot divide by zero")
-        return x / y
-
-    @mcp.tool(description="Calculate percentage change between two values")
-    def percentage_change(old_value: float, new_value: float) -> float:
-        if old_value == 0:
-            raise ValueError("Cannot calculate percentage change from zero")
-        return ((new_value - old_value) / old_value) * 100
-
-    @mcp.tool(description="Calculate average of a list of numbers")
-    def calculate_average(numbers: list) -> float:
-        if not numbers:
-            raise ValueError("Cannot calculate average of empty list")
-        return sum(numbers) / len(numbers)
-
-    # -----------------------------
-    # Simplified US payroll tool
-    # -----------------------------
-    @mcp.tool(description="Calculate simple US payroll for full-time (salary) or part-time (hourly) employee")
-    def simple_us_payroll(
-        employee_type: str,              # "fulltime" or "parttime"
-        hourly_rate: float = 0.0,        # used for part-time
-        hours: float = 0.0,              # used for part-time
-        annual_salary: float = 0.0,      # used for full-time
-        pay_periods_per_year: int = 26,  # e.g. 26 = biweekly, 12 = monthly
-        federal_tax_rate: float = 0.12,  # 12% federal
-        state_tax_rate: float = 0.05,    # 5% state
-        pre_tax_deductions: float = 0.0, # e.g. 401k
-        post_tax_deductions: float = 0.0 # e.g. union fees
-    ) -> dict:
-        """
-        Simplified US payroll calculator.
-        Calculates gross pay, employee taxes (federal, state, SS, Medicare),
-        net pay, and employer match (SS, Medicare).
-        """
-
-        et = employee_type.lower().strip()
-        if et not in ("fulltime", "parttime"):
-            raise ValueError("employee_type must be 'fulltime' or 'parttime'")
-
-        if et == "fulltime":
-            if annual_salary <= 0:
-                raise ValueError("annual_salary must be > 0 for fulltime")
-            gross_pay = annual_salary / pay_periods_per_year
-        else:  # parttime
-            if hourly_rate <= 0 or hours <= 0:
-                raise ValueError("hourly_rate and hours must be > 0 for parttime")
-            gross_pay = hourly_rate * hours
-
-        taxable_wages = max(0.0, gross_pay - pre_tax_deductions)
-
-        # Employee taxes
-        federal_tax = taxable_wages * federal_tax_rate
-        state_tax = taxable_wages * state_tax_rate
-        social_security = taxable_wages * 0.062
-        medicare = taxable_wages * 0.0145
-        total_tax = federal_tax + state_tax + social_security + medicare
-
-        # Net pay
-        net_pay = gross_pay - pre_tax_deductions - total_tax - post_tax_deductions
-
-        # Employer payroll taxes (match on FICA only)
-        employer_ss = taxable_wages * 0.062
-        employer_medicare = taxable_wages * 0.0145
-        employer_total_cost = gross_pay + employer_ss + employer_medicare
-
-        return {
-            "employee_type": et,
-            "gross_pay": round(gross_pay, 2),
-            "taxable_wages": round(taxable_wages, 2),
-            "federal_tax": round(federal_tax, 2),
-            "state_tax": round(state_tax, 2),
-            "social_security": round(social_security, 2),
-            "medicare": round(medicare, 2),
-            "total_employee_tax": round(total_tax, 2),
-            "net_pay": round(net_pay, 2),
-            "employer_ss": round(employer_ss, 2),
-            "employer_medicare": round(employer_medicare, 2),
-            "employer_total_cost": round(employer_total_cost, 2)
-        }
-
-    # Run the server with Streamable HTTP transport
-    print("Starting Analytics MCP Server on http://localhost:8003")
-    mcp.run(transport="streamable-http", host="0.0.0.0", port=8003)
+DUMMY_DATA = {
+    "sales": [
+        {"month": "Jan", "revenue": 12000, "expenses": 5000, "customers": 120},
+        {"month": "Feb", "revenue": 18000, "expenses": 7000, "customers": 150},
+        {"month": "Mar", "revenue": 22500, "expenses": 9000, "customers": 175},
+        {"month": "Apr", "revenue": 24000, "expenses": 9500, "customers": 190},
+        {"month": "May", "revenue": 30000, "expenses": 11000, "customers": 220},
+        {"month": "Jun", "revenue": 33000, "expenses": 13000, "customers": 250},
+    ],
+    "products": [
+        {"product": "A", "units_sold": 1200, "returns": 25},
+        {"product": "B", "units_sold": 900, "returns": 40},
+        {"product": "C", "units_sold": 750, "returns": 12},
+    ],
+    "traffic": [
+        {"day": "Mon", "visitors": 400},
+        {"day": "Tue", "visitors": 500},
+        {"day": "Wed", "visitors": 650},
+        {"day": "Thu", "visitors": 700},
+        {"day": "Fri", "visitors": 900},
+        {"day": "Sat", "visitors": 1500},
+        {"day": "Sun", "visitors": 1200},
+    ]
+}
 
 
-def _get_analytics_response_impl(query: str) -> tuple[str, Dict[str, Any]]:
-    """
-    Internal implementation of analytics agent response (without tracing decorator).
-    """
-    analytics_system_prompt = """
-    You are a business analytics assistant that can perform calculations and data analysis.
+from strands.tools import tool
 
-    You can help with:
-    - Basic arithmetic (addition, subtraction, multiplication, division)
-    - Percentage calculations and changes
-    - Averages and statistical analysis
-    - Simple US payroll what-ifs for full-time (salary) and part-time (hourly).
-      Use the MCP tool `simple_us_payroll` when the user asks about wages vs taxes.
+@tool
+def add(x: float, y: float) -> float:
+    """Add two numbers together"""
+    return x + y
 
-    When asked to perform calculations, work through them step by step and show your work.
-    Explain the calculation and show the result clearly.
-    For business analytics queries, provide insights along with the numbers.
+@tool
+def subtract(x: float, y: float) -> float:
+    """Subtract second number from first"""
+    return x - y
 
-    Examples:
-    - "Full-time $78,000 annually, biweekly, federal 12%, state 5%, 401k $200 per period"
-    - "Part-time $25/hr for 22 hours, federal 10%, state 4%"
-    """
+@tool
+def multiply(x: float, y: float) -> float:
+    """Multiply two numbers"""
+    return x * y
+
+@tool
+def divide(x: float, y: float) -> float:
+    """Divide first number by second"""
+    if y == 0:
+        raise ValueError("Cannot divide by zero")
+    return x / y
+
+@tool
+def calculate_average(numbers: list) -> float:
+    """Calculate the average of a list of numbers"""
+    if not numbers:
+        raise ValueError("Cannot calculate average of empty list")
+    return sum(numbers) / len(numbers)
+
+@tool
+def percent_change(old: float, new: float) -> float:
+    """Calculate percent change between old and new values"""
+    if old == 0:
+        raise ValueError("Cannot calculate percent change from zero")
+    return ((new - old) / old) * 100
+
+@tool
+def query_data_tool(table: str) -> list:
+    """Fetch dataset by name. Available tables: sales, products, traffic"""
+    if table not in DUMMY_DATA:
+        raise ValueError(f"Unknown table '{table}'. Available: {list(DUMMY_DATA.keys())}")
+    return DUMMY_DATA[table]
+
+@tool
+def generate_chart_tool(data: list, chart_type: str = "line", x: str = None, y: str = None, title: str = None) -> dict:
+    """Generate a chart from data. Returns dict with base64 PNG image.
     
-    # Try to connect to MCP server for tool access
-    # If MCP server is not available, agent will work without tools
+    IMPORTANT: Pass the FULL list of dictionaries from query_data_tool.
+    Example: generate_chart_tool(sales_data, "line", "month", "revenue", "Revenue Trend")
+    
+    Args:
+        data: List of dictionaries containing the data (from query_data_tool)
+        chart_type: Type of chart - "line", "bar", or "scatter"
+        x: Column name for x-axis (e.g., "month", "product", "day")
+        y: Column name for y-axis (e.g., "revenue", "expenses", "visitors")
+        title: Chart title
+    
+    Returns:
+        Dict with image_base64, format, and description
+    """
     try:
-        analytics_mcp_url = os.getenv("ANALYTICS_MCP_URL", "http://localhost:8003/mcp/")
+        logger.info(f"Chart tool called: type={chart_type}, x={x}, y={y}")
+        logger.info(f"Data type: {type(data)}, length: {len(data) if isinstance(data, list) else 'N/A'}")
+        logger.info(f"First item: {data[0] if data and isinstance(data, list) else 'N/A'}")
         
-        def create_mcp_transport():
-            return streamablehttp_client(analytics_mcp_url)
+        df = pd.DataFrame(data)
+        logger.info(f"DataFrame created successfully. Columns: {list(df.columns)}")
         
-        mcp_client = MCPClient(create_mcp_transport)
+        plt.figure(figsize=(8, 5))
         
-        with mcp_client:
-            # Get tools from MCP server
-            tools = mcp_client.list_tools_sync()
-            
-            # Wrap tools with tracing if enabled
-            if is_tracing_enabled():
-                traced_tools = []
-                for tool in tools:
-                    # Create a traced wrapper for each tool
-                    original_tool = tool
-                    
-                    def create_traced_tool(orig_tool):
-                        """Create a traced version of a tool."""
-                        try:
-                            from opik import track
-                            
-                            # Get the original tool's call method
-                            original_call = orig_tool.call if hasattr(orig_tool, 'call') else orig_tool
-                            
-                            @track(
-                                name="mcp_tool_call",
-                                tags=["tool:mcp", f"tool:{orig_tool.name if hasattr(orig_tool, 'name') else 'unknown'}"],
-                                metadata={
-                                    **get_opik_metadata(),
-                                    "tool_name": orig_tool.name if hasattr(orig_tool, 'name') else 'unknown',
-                                    "agent_type": "analytics"
-                                }
-                            )
-                            def traced_tool_call(*args, **kwargs):
-                                """Traced wrapper for tool call."""
-                                return original_call(*args, **kwargs)
-                            
-                            # Replace the call method with traced version
-                            if hasattr(orig_tool, 'call'):
-                                orig_tool.call = traced_tool_call
-                            
-                            return orig_tool
-                        except Exception as e:
-                            logger.debug(f"Failed to wrap tool with tracing: {str(e)}")
-                            return orig_tool
-                    
-                    traced_tools.append(create_traced_tool(original_tool))
-                
-                tools = traced_tools
-            
-            # Create agent with MCP tools
-            analytics_agent = Agent(
-                model=model,
-                name="Analytics Assistant",
-                description="Performs business calculations and data analysis",
-                system_prompt=analytics_system_prompt,
-                tools=tools
-            )
-            
-            response = analytics_agent(query)
-            details = {"query": query, "timestamp": time.time(), "tools_available": len(tools)}
-            return str(response), details
-            
+        if chart_type == "line":
+            plt.plot(df[x], df[y], marker='o', linewidth=2, markersize=6)
+        elif chart_type == "bar":
+            plt.bar(df[x], df[y])
+        elif chart_type == "scatter":
+            plt.scatter(df[x], df[y], s=100)
+        else:
+            raise ValueError(f"Unsupported chart_type: {chart_type}")
+        
+        plt.title(title or f"{chart_type.capitalize()} Chart", fontsize=14, fontweight='bold')
+        plt.xlabel(x, fontsize=11)
+        plt.ylabel(y, fontsize=11)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        buffer = io.BytesIO()
+        plt.savefig(buffer, format="png", dpi=100, bbox_inches='tight')
+        buffer.seek(0)
+        
+        img_b64 = base64.b64encode(buffer.read()).decode("utf-8")
+        plt.close()
+        
+        result = {
+            "image_base64": img_b64,
+            "format": "png",
+            "description": f"{chart_type} chart of {y} vs {x}",
+        }
+        
+        logger.info(f"Chart generated successfully, base64 length: {len(img_b64)}")
+        
+        # Return dict - the agent framework will handle serialization
+        return result
+        
     except Exception as e:
-        # If MCP connection fails, create agent without tools
-        logger.debug(f"Could not connect to MCP server: {str(e)}. Running without tools.")
-        
-        analytics_agent = Agent(
-            model=model,
-            name="Analytics Assistant",
-            description="Performs business calculations and data analysis",
-            system_prompt=analytics_system_prompt
-        )
-        
-        response = analytics_agent(query)
-        details = {"query": query, "timestamp": time.time(), "tools_available": 0}
-        return str(response), details
+        error_msg = f"Chart generation failed: {str(e)}"
+        logger.error(error_msg, exc_info=True)
+        raise ValueError(error_msg)
+
+ANALYTICS_TOOLS = [add, subtract, multiply, divide, calculate_average, percent_change, query_data_tool, generate_chart_tool]
 
 
-def get_analytics_response(query: str) -> tuple[str, Dict[str, Any]]:
-    """
-    Get response from analytics agent for a specific query.
+def _get_analytics_response_impl(query: str):
+    """Process analytics query"""
     
-    This function is traced with Opik when tracing is enabled.
-    """
-    # Determine model provider and model ID
-    use_bedrock = os.getenv("USE_BEDROCK", "False").lower() == "true"
-    model_provider = "bedrock" if use_bedrock else "anthropic"
+    # Check if this is a chart request (simple or with analysis)
+    query_lower = query.lower()
+    chart_keywords = ['chart', 'graph', 'plot', 'visualiz', 'show', 'display']
+    calculation_only_keywords = ['add', 'subtract', 'multiply', 'divide', 'average of', 'mean of', 'sum of']
     
-    if use_bedrock:
-        model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-v1:0")
-    else:
-        model_id = os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219")
+    has_chart_keyword = any(keyword in query_lower for keyword in chart_keywords)
+    is_calculation_only = any(keyword in query_lower for keyword in calculation_only_keywords) and not has_chart_keyword
     
-    # Check if tracing is enabled
-    if is_tracing_enabled():
+    # Use direct chart generation for any request with chart keywords (unless it's pure calculation)
+    if has_chart_keyword and not is_calculation_only:
+        # Handle chart requests directly with intelligent parsing
         try:
-            from opik import track
+            logger.info(f"Detected chart request: {query}")
+            query_lower = query.lower()
             
-            # Get common metadata
-            base_metadata = get_opik_metadata()
+            # Determine dataset
+            table = "sales"  # default
+            if "product" in query_lower:
+                table = "products"
+            elif "traffic" in query_lower or "visitor" in query_lower:
+                table = "traffic"
             
-            # Add Analytics agent specific metadata
-            trace_metadata = {
-                **base_metadata,
-                "model_provider": model_provider,
-                "model_id": model_id,
-                "agent_type": "analytics"
-            }
+            # Get the data
+            data = query_data_tool(table)
+            logger.info(f"Using table: {table}")
             
-            # Apply the track decorator dynamically
-            @track(
-                name="analytics_agent_query",
-                tags=["agent:analytics"],
-                metadata=trace_metadata
-            )
-            def traced_analytics_response(query: str) -> tuple[str, Dict[str, Any]]:
-                return _get_analytics_response_impl(query)
+            # Determine chart type
+            chart_type = "line"
+            if "bar" in query_lower:
+                chart_type = "bar"
+            elif "scatter" in query_lower:
+                chart_type = "scatter"
             
-            return traced_analytics_response(query)
+            # Determine x and y columns based on dataset and query
+            if table == "sales":
+                x_col = "month"
+                y_col = "revenue"  # default
+                title = "Monthly Revenue Trend"
+                
+                if "expense" in query_lower:
+                    y_col = "expenses"
+                    title = "Monthly Expenses Trend"
+                elif "customer" in query_lower:
+                    y_col = "customers"
+                    title = "Monthly Customers Trend"
+                elif "revenue" in query_lower:
+                    y_col = "revenue"
+                    title = "Monthly Revenue Trend"
+                    
+            elif table == "products":
+                x_col = "product"
+                y_col = "units_sold"  # default
+                title = "Product Sales"
+                
+                if "return" in query_lower:
+                    y_col = "returns"
+                    title = "Product Returns"
+                elif "unit" in query_lower or "sold" in query_lower or "sales" in query_lower:
+                    y_col = "units_sold"
+                    title = "Units Sold by Product"
+                    
+            elif table == "traffic":
+                x_col = "day"
+                y_col = "visitors"
+                title = "Daily Website Traffic"
             
-        except ImportError:
-            logger.debug("Opik package not available. Running without tracing.")
-            return _get_analytics_response_impl(query)
+            # Generate the chart
+            result = generate_chart_tool(data, chart_type, x_col, y_col, title)
+            logger.info(f"Chart generated: {chart_type} of {y_col} vs {x_col}")
+            
+            # If query includes analysis keywords, add brief analysis
+            if any(word in query_lower for word in ['analyze', 'analysis', 'trend', 'compare', 'insight']):
+                # Calculate some basic stats
+                values = [row[y_col] for row in data]
+                if values:
+                    min_val = min(values)
+                    max_val = max(values)
+                    avg_val = sum(values) / len(values)
+                    growth = ((max_val - min_val) / min_val * 100) if min_val > 0 else 0
+                    
+                    # Add analysis to the result
+                    result['analysis'] = {
+                        'min': min_val,
+                        'max': max_val,
+                        'average': round(avg_val, 2),
+                        'growth_percent': round(growth, 1)
+                    }
+            
+            return json.dumps(result), {}
+            
         except Exception as e:
-            logger.warning(
-                f"Failed to apply tracing to Analytics agent: {str(e)}. "
-                "Running without tracing."
-            )
-            return _get_analytics_response_impl(query)
+            logger.error(f"Direct chart generation failed: {e}", exc_info=True)
+            return f"Error generating chart: {str(e)}", {}
+    
+    # For analysis requests, use the agent with all tools
+    system_prompt = """You are an AI Business Intelligence Dashboard Assistant.
+
+Your job is to analyze data, compute metrics, and create visualizations in a dashboard-quality format.
+
+AVAILABLE TOOLS:
+- Math: add(x, y), subtract(x, y), multiply(x, y), divide(x, y)
+- Statistics: calculate_average(numbers), percent_change(old, new)
+- Data: query_data_tool(table) - Returns list of dicts. Tables: "sales", "products", "traffic"
+- Charts: generate_chart_tool(data, chart_type, x, y, title) - Returns dict with base64 image
+
+===========================================
+HOW TO USE GENERATE_CHART_TOOL CORRECTLY
+===========================================
+The generate_chart_tool requires these parameters:
+1. data: The FULL list of dictionaries from query_data_tool (pass it directly!)
+2. chart_type: "line", "bar", or "scatter"
+3. x: Column name for x-axis (e.g., "month", "product", "day")
+4. y: Column name for y-axis (e.g., "revenue", "expenses", "visitors")
+5. title: Chart title string
+
+CORRECT EXAMPLE:
+Step 1: sales_data = query_data_tool("sales")
+Step 2: generate_chart_tool(sales_data, "line", "month", "revenue", "Monthly Revenue Trend")
+
+WRONG - Don't do this:
+- generate_chart_tool([12000, 18000, ...], "line", ...) ❌ (Don't extract values)
+- generate_chart_tool(sales_data[0], ...) ❌ (Don't pass single row)
+- generate_chart_tool("sales", ...) ❌ (Don't pass table name)
+
+CORRECT - Do this:
+- Pass the ENTIRE data list from query_data_tool ✓
+
+===========================================
+FINAL USER-FACING OUTPUT REQUIREMENTS
+===========================================
+Your responses MUST follow a business-dashboard-friendly format:
+
+1. **Headline Metric**  
+   Give the direct answer clearly (big number or KPI style).
+
+2. **Supporting Calculation / Short Summary**  
+   Provide a concise, friendly explanation of how the tool result was obtained.
+   Example:
+   “Using the calculation tool, I added 25 and 42, resulting in **67**.”
+
+3. **Optional Data Table (if helpful)**  
+   Display key values used in the calculation or analysis.
+
+4. **Visualization**  
+   If the user asks for a chart—or if a chart meaningfully enhances the insight—  
+   call `generate_chart` and return the base64 image along with a short explanation.
+
+5. **Business Insight**  
+   End with a one-sentence interpretation, such as:  
+   “Revenue continues an upward trend, indicating strong month-over-month growth.”
+
+===========================================
+VOICE & STYLE
+===========================================
+• Clear, concise, executive-level tone  
+• Avoid jargon unless necessary  
+• Provide insights, not just numbers  
+• Always sound like a BI dashboard or analytics tool  
+• Never reveal chain-of-thought—summarize instead  
+• Always use tools for actual computation or data extraction
+
+===========================================
+EXAMPLE RESPONSE STYLE
+===========================================
+
+User: “Add 20 and 40.”
+
+Assistant:
+**KPI Result:** 60  
+**How I computed it:** I used the calculation tool to add 20 and 40.  
+**Insight:** This represents the combined total across both values.
+
+User: “Show revenue vs expenses by month.”
+
+Assistant:
+1. Fetch sales data using `query_data('sales')`  
+2. Create a bar or line chart using `generate_chart`  
+3. Return a dashboard-style summary:
+   • Revenue is rising steadily  
+   • Expenses grow at a slower rate  
+   • Profit margin is improving
+
+===========================================
+CRITICAL CHART EXAMPLE
+===========================================
+User: "Analyze revenue with a chart"
+
+CORRECT TOOL USAGE:
+1. data = query_data_tool("sales")
+2. generate_chart_tool(data, "line", "month", "revenue", "Revenue Trend")
+   ↑ Pass the FULL data list, not extracted values!
+
+===========================================
+BEHAVIOR RULES
+===========================================
+- ALWAYS pass full data list to generate_chart_tool (not values!)
+- Use calculate_average tool for averages
+- Always use tools for math or data lookups
+- Provide dashboard-style summaries with insights
+
+
+
+"""
+
+    try:
+        agent = Agent(
+            model=model,
+            system_prompt=system_prompt,
+            tools=ANALYTICS_TOOLS,  # Include ALL tools including generate_chart_tool
+            name="AnalyticsAssistant"
+        )
+
+        response = agent(query)
+        response_str = str(response).strip()
+        
+        logger.info(f"Agent response: {response_str[:200]}")
+        return response_str, {}
+
+    except Exception as e:
+        logger.error(f"Analytics agent error: {e}", exc_info=True)
+        return f"Error: {str(e)}", {}
+
+
+def get_analytics_response(query: str):
+    return _get_analytics_response_impl(query)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1] == "demo":
+        print("Analytics Agent Demo")
+        result, _ = get_analytics_response("show me monthly revenue chart")
+        if "image_base64" in result:
+            print("SUCCESS: Chart JSON returned")
+            print(f"JSON length: {len(result)}")
+        else:
+            print("Response:", result[:200])
     else:
-        # Tracing is disabled, run without tracing
-        return _get_analytics_response_impl(query)
+        print("Usage: python analytics_agent_fixed.py demo")
