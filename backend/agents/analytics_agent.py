@@ -13,6 +13,11 @@ import logging
 import json
 import base64
 import io
+from pathlib import Path
+
+# Add backend directory to sys.path so we can import 'data'
+sys.path.append(str(Path(__file__).parent.parent))
+
 import pandas as pd
 import re
 import traceback
@@ -40,11 +45,22 @@ if USE_BEDROCK:
         aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
     )
 
-    model = BedrockModel(
-        max_tokens=2048,
-        temperature=0.3,
-        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
-    )
+    guardrail_id = os.getenv("BEDROCK_GUARDRAIL_ID")
+    guardrail_version = os.getenv("BEDROCK_GUARDRAIL_VERSION", "1")
+    
+    model_kwargs = {
+        "max_tokens": 2048,
+        "temperature": 0.3,
+        "model_id": os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
+    }
+    
+    if guardrail_id:
+        logger.info(f"Initializing Bedrock model with guardrail: {guardrail_id} (v{guardrail_version})")
+        model_kwargs["guardrail_id"] = guardrail_id
+        model_kwargs["guardrail_version"] = guardrail_version
+        model_kwargs["guardrail_trace"] = "enabled"
+        
+    model = BedrockModel(**model_kwargs)
 
 else:
     from strands import Agent
@@ -432,6 +448,12 @@ Example: "Calculate average monthly revenue"
         )
 
         response = agent(query)
+        
+        # Handle guardrail intervention
+        if hasattr(response, "stop_reason") and response.stop_reason == "guardrail_intervened":
+            logger.warning("Guardrail intervened in Analytics Agent")
+            return str(response), {}
+            
         response_str = str(response).strip()
         
         logger.info(f"Agent response: {response_str[:200]}")

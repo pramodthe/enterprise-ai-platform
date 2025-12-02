@@ -23,18 +23,24 @@ if os.getenv("USE_BEDROCK", "False").lower() == "true":
 
     # Use Bedrock model
     import boto3
-    bedrock_runtime = boto3.client(
-        "bedrock-runtime",
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-        region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-    )
-    model = BedrockModel(
-        client=bedrock_runtime,
-        max_tokens=1028,
-        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0"),
-        temperature=0.3
-    )
+    
+    # Guardrail configuration
+    guardrail_id = os.getenv("BEDROCK_GUARDRAIL_ID")
+    guardrail_version = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
+    
+    model_kwargs = {
+        "max_tokens": 1028,
+        "temperature": 0.3,
+        "model_id": os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
+    }
+    
+    if guardrail_id:
+        logger.info(f"HR Agent: Bedrock Guardrails enabled - {guardrail_id} (v{guardrail_version})")
+        model_kwargs["guardrail_id"] = guardrail_id
+        model_kwargs["guardrail_version"] = guardrail_version
+        model_kwargs["guardrail_trace"] = "enabled"
+    
+    model = BedrockModel(**model_kwargs)
 else:
     # Use Anthropic model (original implementation)
     from strands import Agent
@@ -92,17 +98,18 @@ def _get_hr_agent_response_impl(question: str) -> str:
     You have access to the following sample employee data:
     
     Employees:
-    - John Smith (ID: E001) - Senior Software Engineer, Skills: Python, JavaScript, AWS
-    - Sarah Johnson (ID: E002) - Product Manager, Skills: Agile, Product Strategy, User Research
-    - Michael Chen (ID: E003) - Data Scientist, Skills: Python, Machine Learning, SQL
-    - Emily Davis (ID: E004) - UX Designer, Skills: Figma, User Research, Prototyping
-    - David Wilson (ID: E005) - DevOps Engineer, Skills: Kubernetes, Docker, CI/CD
+    - Sarah Chen (ID: 1) - Senior Frontend Engineer, Department: Engineering, Skills: React, TypeScript, Node.js, Python
+    - Michael Ross (ID: 2) - Product Manager, Department: Product, Skills: Strategy, Agile, User Research, SQL
+    - Jessica Wu (ID: 3) - UX Designer, Department: Design, Skills: Figma, Prototyping, Accessibility, CSS
+    - David Miller (ID: 4) - DevOps Engineer, Department: Engineering, Skills: AWS, Kubernetes, Terraform, Go
+    - James Wilson (ID: 5) - Marketing Lead, Department: Marketing, Skills: SEO, Content Strategy, Analytics
+    - Emily Zhang (ID: 6) - Data Scientist, Department: Analytics, Skills: Python, Machine Learning, TensorFlow, AWS
     
     Organization Structure:
     - CEO: Robert Anderson
-      - CTO: Jennifer Lee (manages: John Smith, David Wilson)
-      - CPO: Mark Thompson (manages: Sarah Johnson, Emily Davis)
-      - Head of Data: Lisa Brown (manages: Michael Chen)
+      - CTO: Jennifer Lee (manages: Sarah Chen, David Miller, Emily Zhang)
+      - CPO: Mark Thompson (manages: Michael Ross, Jessica Wu)
+      - CMO: Lisa Brown (manages: James Wilson)
     
     You also have access to a tool called 'search_company_documents' that can search through 
     company policies, handbooks, procedures, and guidelines.
@@ -133,6 +140,12 @@ def _get_hr_agent_response_impl(question: str) -> str:
     
     # Process the question and return response
     response = hr_agent(question)
+    
+    # Handle guardrail intervention
+    if hasattr(response, "stop_reason") and response.stop_reason == "guardrail_intervened":
+        logger.warning("Guardrail intervened in HR Agent")
+        return str(response)
+        
     return str(response)
 
 

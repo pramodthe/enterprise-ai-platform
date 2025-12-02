@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # Bedrock model ID for Claude
     bedrock_model_id: str = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
     
+    # Bedrock Guardrails
+    bedrock_guardrail_id: Optional[str] = os.getenv("BEDROCK_GUARDRAIL_ID")
+    bedrock_guardrail_version: str = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
+    
     # Document processing embeddings (Bedrock or OpenAI)
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     

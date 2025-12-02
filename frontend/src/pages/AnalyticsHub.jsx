@@ -96,17 +96,25 @@ const AnalyticsHub = () => {
 
       // Try to parse as JSON first (for charts)
       if (typeof raw === 'string') {
-        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          try {
-            const jsonObj = JSON.parse(jsonMatch[0]);
-            if (jsonObj.image_base64) {
-              // It's a chart response
-              parsed = jsonObj;
+        // First try parsing the raw string directly
+        try {
+          const jsonObj = JSON.parse(raw);
+          if (jsonObj.image_base64) {
+            parsed = jsonObj;
+          }
+        } catch (e) {
+          // If direct parsing fails, try extracting JSON from text (e.g. markdown blocks)
+          const jsonMatch = raw.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            try {
+              const jsonObj = JSON.parse(jsonMatch[0]);
+              if (jsonObj.image_base64) {
+                parsed = jsonObj;
+              }
+            } catch (err) {
+              // Not valid JSON, treat as text
+              console.log('Not JSON, treating as text response');
             }
-          } catch (err) {
-            // Not valid JSON, treat as text
-            console.log('Not JSON, treating as text response');
           }
         }
       }
@@ -228,7 +236,7 @@ const AnalyticsHub = () => {
                               )}
                             </div>
                           )}
-                          
+
                           {/* Chart */}
                           <div className="flex flex-col items-center">
                             <img
@@ -240,7 +248,7 @@ const AnalyticsHub = () => {
                               {aiResponse.description}
                             </p>
                           </div>
-                          
+
                           {/* Report Text (if available) */}
                           {aiResponse.report && (
                             <div className="mt-6 prose prose-sm max-w-none prose-emerald bg-white rounded-lg p-6 border border-gray-200">

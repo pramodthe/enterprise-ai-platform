@@ -42,12 +42,25 @@ def create_llm_model() -> LLMModel:
                 region_name=AWS_REGION,
             )
 
-        return LLMModel(
-            client=bedrock_runtime,
-            max_tokens=1028,
-            model_id=BEDROCK_MODEL_ID_DEFAULT,
-            temperature=0.3,
-        )
+        # Guardrail configuration
+        guardrail_id = os.getenv("BEDROCK_GUARDRAIL_ID")
+        guardrail_version = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
+        
+        model_kwargs = {
+            "max_tokens": 1028,
+            "temperature": 0.3,
+            "model_id": BEDROCK_MODEL_ID_DEFAULT
+        }
+        
+        if guardrail_id:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Document Agent: Bedrock Guardrails enabled - {guardrail_id} (v{guardrail_version})")
+            model_kwargs["guardrail_id"] = guardrail_id
+            model_kwargs["guardrail_version"] = guardrail_version
+            model_kwargs["guardrail_trace"] = "enabled"
+        
+        return LLMModel(**model_kwargs)
 
     # Direct Anthropic API
     anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")

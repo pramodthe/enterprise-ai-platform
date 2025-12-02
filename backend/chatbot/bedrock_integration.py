@@ -59,7 +59,9 @@ class BedrockIntegration:
         max_retries: int = 3,
         initial_retry_delay: float = 1.0,
         use_bedrock: Optional[bool] = None,
-        anthropic_api_key: Optional[str] = None
+        anthropic_api_key: Optional[str] = None,
+        guardrail_id: Optional[str] = None,
+        guardrail_version: Optional[str] = None
     ):
         """
         Initialize Bedrock integration.
@@ -75,9 +77,15 @@ class BedrockIntegration:
             initial_retry_delay: Initial retry delay in seconds (default: 1.0)
             use_bedrock: Whether to use Bedrock (defaults to USE_BEDROCK env var)
             anthropic_api_key: Anthropic API key for direct API usage
+            guardrail_id: Bedrock Guardrail ID (optional)
+            guardrail_version: Bedrock Guardrail version (optional, defaults to DRAFT)
         """
         self.max_retries = max_retries
         self.initial_retry_delay = initial_retry_delay
+        
+        # Guardrail configuration
+        self.guardrail_id = guardrail_id or os.getenv("BEDROCK_GUARDRAIL_ID")
+        self.guardrail_version = guardrail_version or os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
         
         # Determine whether to use Bedrock or Anthropic API
         if use_bedrock is None:
@@ -102,8 +110,17 @@ class BedrockIntegration:
             
             logger.info(
                 f"Initializing BedrockModel with region={region_name}, "
-                f"model_id={model_id}"
+                f"model_id={model_id}, guardrail_id={self.guardrail_id}"
             )
+            
+            # Build model params
+            model_params = {"temperature": temperature}
+            
+            # Add guardrail configuration if provided
+            if self.guardrail_id:
+                model_params["guardrailIdentifier"] = self.guardrail_id
+                model_params["guardrailVersion"] = self.guardrail_version
+                logger.info(f"Bedrock Guardrails enabled: {self.guardrail_id} (version: {self.guardrail_version})")
             
             # Initialize BedrockModel
             self.model = BedrockModel(
@@ -114,7 +131,7 @@ class BedrockIntegration:
                 },
                 max_tokens=max_tokens,
                 model_id=model_id,
-                params={"temperature": temperature}
+                params=model_params
             )
         else:
             # Use Anthropic API directly
@@ -226,7 +243,8 @@ class BedrockIntegration:
                 "model_id": self.model_id,
                 "max_tokens": self.max_tokens,
                 "temperature": self.temperature,
-                "provider": "bedrock" if self.use_bedrock else "anthropic"
+                "provider": "bedrock" if self.use_bedrock else "anthropic",
+                "guardrail_enabled": bool(self.guardrail_id)
             }
             
             # Try to extract additional metadata from response object
@@ -242,6 +260,10 @@ class BedrockIntegration:
                 
                 if "model" in response_dict:
                     metadata["model"] = response_dict["model"]
+                
+                # Extract guardrail trace if available
+                if "trace" in response_dict:
+                    metadata["guardrail_trace"] = response_dict["trace"]
             
             logger.debug(f"Parsed response with {len(content)} characters")
             

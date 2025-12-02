@@ -16,7 +16,6 @@ from backend.chatbot.models import (
 from backend.chatbot.session_manager import SessionManager
 from backend.chatbot.agent_router import AgentRouter
 from backend.chatbot.bedrock_integration import BedrockIntegration
-from backend.core.guardrail import create_organization_guardrail, GuardrailResult
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -52,8 +51,7 @@ Be professional, concise, and helpful in your responses."""
         session_manager: SessionManager,
         agent_router: AgentRouter,
         max_context_tokens: int = 4000,
-        system_prompt: Optional[str] = None,
-        enable_guardrails: bool = True
+        system_prompt: Optional[str] = None
     ):
         """
         Initialize the Root Chatbot with dependencies.
@@ -64,7 +62,6 @@ Be professional, concise, and helpful in your responses."""
             agent_router: AgentRouter for query routing decisions
             max_context_tokens: Maximum tokens for context window (default: 4000)
             system_prompt: Optional custom system prompt
-            enable_guardrails: Enable guardrail checks (default: True)
         """
         self.bedrock_integration = bedrock_integration
         self.model = bedrock_integration.get_model()
@@ -73,18 +70,10 @@ Be professional, concise, and helpful in your responses."""
         self.max_context_tokens = max_context_tokens
         self.system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
         
-        # Initialize guardrail
-        self.enable_guardrails = enable_guardrails
-        if enable_guardrails:
-            self.guardrail = create_organization_guardrail()
-            logger.info("Guardrails enabled for RootChatbot")
-        else:
-            self.guardrail = None
-            logger.info("Guardrails disabled for RootChatbot")
-        
         logger.info(
             f"Initialized RootChatbot with max_context_tokens={max_context_tokens}, "
-            f"using {'Bedrock' if bedrock_integration.is_using_bedrock() else 'Anthropic'}"
+            f"using {'Bedrock' if bedrock_integration.is_using_bedrock() else 'Anthropic'}, "
+            f"guardrails={'enabled' if bedrock_integration.guardrail_id else 'disabled'}"
         )
     
     async def process_message(
@@ -108,29 +97,6 @@ Be professional, concise, and helpful in your responses."""
             ChatResponse containing the reply, session_id, and metadata
         """
         logger.info(f"Processing message: {message[:100]}...")
-        
-        # Step 0: Guardrail check (before any processing)
-        if self.enable_guardrails and self.guardrail:
-            guardrail_result = self.guardrail.check(message)
-            
-            if not guardrail_result.is_safe:
-                logger.warning(
-                    f"Guardrail violation detected: {guardrail_result.violation_type.value}"
-                )
-                
-                # Return intervention message without processing
-                return ChatResponse(
-                    message=guardrail_result.intervention_message,
-                    session_id=session_id or "guardrail_blocked",
-                    agent_used="guardrail",
-                    confidence=1.0,
-                    timestamp=datetime.now(),
-                    metadata={
-                        "guardrail_blocked": True,
-                        "violation_type": guardrail_result.violation_type.value,
-                        "reason": guardrail_result.reason
-                    }
-                )
         
         # Step 1: Session retrieval or creation
         if session_id:
