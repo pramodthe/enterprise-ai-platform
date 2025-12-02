@@ -1,5 +1,10 @@
 """
-ANALYTICS AGENT - Fixed for Chart Rendering
+ANALYTICS AGENT - Complete with Chart Rendering and Comprehensive Data
+Features:
+- Chart generation with matplotlib
+- Comprehensive business data (10 tables)
+- Automatic report generation
+- Analysis metrics calculation
 """
 
 import os
@@ -10,6 +15,7 @@ import base64
 import io
 import pandas as pd
 import re
+import traceback
 
 import matplotlib
 matplotlib.use('Agg')
@@ -52,30 +58,10 @@ else:
     )
 
 
-DUMMY_DATA = {
-    "sales": [
-        {"month": "Jan", "revenue": 12000, "expenses": 5000, "customers": 120},
-        {"month": "Feb", "revenue": 18000, "expenses": 7000, "customers": 150},
-        {"month": "Mar", "revenue": 22500, "expenses": 9000, "customers": 175},
-        {"month": "Apr", "revenue": 24000, "expenses": 9500, "customers": 190},
-        {"month": "May", "revenue": 30000, "expenses": 11000, "customers": 220},
-        {"month": "Jun", "revenue": 33000, "expenses": 13000, "customers": 250},
-    ],
-    "products": [
-        {"product": "A", "units_sold": 1200, "returns": 25},
-        {"product": "B", "units_sold": 900, "returns": 40},
-        {"product": "C", "units_sold": 750, "returns": 12},
-    ],
-    "traffic": [
-        {"day": "Mon", "visitors": 400},
-        {"day": "Tue", "visitors": 500},
-        {"day": "Wed", "visitors": 650},
-        {"day": "Thu", "visitors": 700},
-        {"day": "Fri", "visitors": 900},
-        {"day": "Sat", "visitors": 1500},
-        {"day": "Sun", "visitors": 1200},
-    ]
-}
+# Import comprehensive business data
+from data.business_data import ALL_DATA
+
+DUMMY_DATA = ALL_DATA
 
 
 from strands.tools import tool
@@ -118,23 +104,34 @@ def percent_change(old: float, new: float) -> float:
 
 @tool
 def query_data_tool(table: str) -> list:
-    """Fetch dataset by name. Available tables: sales, products, traffic"""
+    """Fetch dataset by name.
+    
+    Available tables:
+    - sales: Monthly sales data (12 months)
+    - products: Product performance (7 products)
+    - traffic: Website traffic (7 days)
+    - demographics: Customer demographics (6 age groups)
+    - regions: Regional sales (6 regions)
+    - marketing: Marketing channels (7 channels)
+    - employees: Employee data (7 departments)
+    - quarterly: Quarterly performance (4 quarters)
+    - satisfaction: Customer satisfaction (6 metrics)
+    - inventory: Inventory status (4 categories)
+    """
     if table not in DUMMY_DATA:
-        raise ValueError(f"Unknown table '{table}'. Available: {list(DUMMY_DATA.keys())}")
+        available = ", ".join(DUMMY_DATA.keys())
+        raise ValueError(f"Unknown table '{table}'. Available: {available}")
     return DUMMY_DATA[table]
 
 @tool
 def generate_chart_tool(data: list, chart_type: str = "line", x: str = None, y: str = None, title: str = None) -> dict:
     """Generate a chart from data. Returns dict with base64 PNG image.
     
-    IMPORTANT: Pass the FULL list of dictionaries from query_data_tool.
-    Example: generate_chart_tool(sales_data, "line", "month", "revenue", "Revenue Trend")
-    
     Args:
-        data: List of dictionaries containing the data (from query_data_tool)
+        data: List of dictionaries containing the data
         chart_type: Type of chart - "line", "bar", or "scatter"
-        x: Column name for x-axis (e.g., "month", "product", "day")
-        y: Column name for y-axis (e.g., "revenue", "expenses", "visitors")
+        x: Column name for x-axis
+        y: Column name for y-axis
         title: Chart title
     
     Returns:
@@ -142,11 +139,9 @@ def generate_chart_tool(data: list, chart_type: str = "line", x: str = None, y: 
     """
     try:
         logger.info(f"Chart tool called: type={chart_type}, x={x}, y={y}")
-        logger.info(f"Data type: {type(data)}, length: {len(data) if isinstance(data, list) else 'N/A'}")
-        logger.info(f"First item: {data[0] if data and isinstance(data, list) else 'N/A'}")
         
         df = pd.DataFrame(data)
-        logger.info(f"DataFrame created successfully. Columns: {list(df.columns)}")
+        logger.info(f"DataFrame created. Columns: {list(df.columns)}")
         
         plt.figure(figsize=(8, 5))
         
@@ -178,9 +173,7 @@ def generate_chart_tool(data: list, chart_type: str = "line", x: str = None, y: 
             "description": f"{chart_type} chart of {y} vs {x}",
         }
         
-        logger.info(f"Chart generated successfully, base64 length: {len(img_b64)}")
-        
-        # Return dict - the agent framework will handle serialization
+        logger.info(f"Chart generated successfully")
         return result
         
     except Exception as e:
@@ -194,29 +187,45 @@ ANALYTICS_TOOLS = [add, subtract, multiply, divide, calculate_average, percent_c
 def _get_analytics_response_impl(query: str):
     """Process analytics query"""
     
-    # Check if this is a chart request (simple or with analysis)
     query_lower = query.lower()
-    chart_keywords = ['chart', 'graph', 'plot', 'visualiz', 'show', 'display']
+    
+    # Keywords that indicate chart/visualization request
+    chart_keywords = ['chart', 'graph', 'plot', 'visualiz', 'visual', 'show', 'display', 'dashboard']
     calculation_only_keywords = ['add', 'subtract', 'multiply', 'divide', 'average of', 'mean of', 'sum of']
+    report_keywords = ['report', 'comprehensive', 'analysis', 'dashboard', 'summary']
     
     has_chart_keyword = any(keyword in query_lower for keyword in chart_keywords)
+    has_report_keyword = any(keyword in query_lower for keyword in report_keywords)
     is_calculation_only = any(keyword in query_lower for keyword in calculation_only_keywords) and not has_chart_keyword
     
-    # Use direct chart generation for any request with chart keywords (unless it's pure calculation)
-    if has_chart_keyword and not is_calculation_only:
-        # Handle chart requests directly with intelligent parsing
+    # Use direct chart generation for chart or report requests
+    if (has_chart_keyword or has_report_keyword) and not is_calculation_only:
         try:
-            logger.info(f"Detected chart request: {query}")
-            query_lower = query.lower()
+            logger.info(f"Detected chart/report request: {query}")
             
             # Determine dataset
             table = "sales"  # default
+            
             if "product" in query_lower:
                 table = "products"
-            elif "traffic" in query_lower or "visitor" in query_lower:
+            elif "traffic" in query_lower or "visitor" in query_lower or "website" in query_lower:
                 table = "traffic"
+            elif "demographic" in query_lower or "age" in query_lower:
+                table = "demographics"
+            elif "region" in query_lower or "geographic" in query_lower:
+                table = "regions"
+            elif "marketing" in query_lower or "channel" in query_lower:
+                table = "marketing"
+            elif "employee" in query_lower or "department" in query_lower:
+                table = "employees"
+            elif "quarter" in query_lower:
+                table = "quarterly"
+            elif "satisfaction" in query_lower or "rating" in query_lower:
+                table = "satisfaction"
+            elif "inventory" in query_lower or "stock" in query_lower:
+                table = "inventory"
             
-            # Get the data
+            # Get data
             data = query_data_tool(table)
             logger.info(f"Using table: {table}")
             
@@ -227,182 +236,198 @@ def _get_analytics_response_impl(query: str):
             elif "scatter" in query_lower:
                 chart_type = "scatter"
             
-            # Determine x and y columns based on dataset and query
+            # Determine x and y columns based on dataset
             if table == "sales":
-                x_col = "month"
-                y_col = "revenue"  # default
-                title = "Monthly Revenue Trend"
-                
+                x_col, y_col, title = "month", "revenue", "Monthly Revenue Trend"
                 if "expense" in query_lower:
-                    y_col = "expenses"
-                    title = "Monthly Expenses Trend"
+                    y_col, title = "expenses", "Monthly Expenses Trend"
                 elif "customer" in query_lower:
-                    y_col = "customers"
-                    title = "Monthly Customers Trend"
-                elif "revenue" in query_lower:
-                    y_col = "revenue"
-                    title = "Monthly Revenue Trend"
+                    y_col, title = "customers", "Monthly Customers Trend"
+                elif "order" in query_lower:
+                    y_col, title = "orders", "Monthly Orders Trend"
                     
             elif table == "products":
-                x_col = "product"
-                y_col = "units_sold"  # default
-                title = "Product Sales"
-                
+                x_col, y_col, title = "product", "units_sold", "Product Sales"
+                chart_type = "bar"
                 if "return" in query_lower:
-                    y_col = "returns"
-                    title = "Product Returns"
-                elif "unit" in query_lower or "sold" in query_lower or "sales" in query_lower:
-                    y_col = "units_sold"
-                    title = "Units Sold by Product"
+                    y_col, title = "returns", "Product Returns"
+                elif "revenue" in query_lower:
+                    y_col, title = "revenue", "Product Revenue"
+                elif "profit" in query_lower:
+                    y_col, title = "profit", "Product Profitability"
                     
             elif table == "traffic":
-                x_col = "day"
-                y_col = "visitors"
-                title = "Daily Website Traffic"
+                x_col, y_col, title = "day", "visitors", "Daily Website Traffic"
+                if "conversion" in query_lower:
+                    y_col, title = "conversions", "Daily Conversions"
+                elif "bounce" in query_lower:
+                    y_col, title = "bounce_rate", "Bounce Rate by Day"
+                    
+            elif table == "demographics":
+                x_col, y_col, title = "segment", "count", "Customer Demographics"
+                chart_type = "bar"
+                if "spend" in query_lower:
+                    y_col, title = "avg_spend", "Average Spend by Segment"
+                elif "retention" in query_lower:
+                    y_col, title = "retention_rate", "Retention Rate by Segment"
+                    
+            elif table == "regions":
+                x_col, y_col, title = "region", "revenue", "Revenue by Region"
+                chart_type = "bar"
+                if "customer" in query_lower:
+                    y_col, title = "customers", "Customers by Region"
+                elif "growth" in query_lower:
+                    y_col, title = "growth", "Growth Rate by Region"
+                    
+            elif table == "marketing":
+                x_col, y_col, title = "channel", "conversions", "Conversions by Marketing Channel"
+                chart_type = "bar"
+                if "visitor" in query_lower:
+                    y_col, title = "visitors", "Visitors by Marketing Channel"
+                elif "roi" in query_lower:
+                    y_col, title = "roi", "ROI by Marketing Channel"
+                    
+            elif table == "employees":
+                x_col, y_col, title = "department", "employees", "Employees by Department"
+                chart_type = "bar"
+                if "salary" in query_lower:
+                    y_col, title = "avg_salary", "Average Salary by Department"
+                elif "satisfaction" in query_lower:
+                    y_col, title = "satisfaction", "Employee Satisfaction"
+                    
+            elif table == "quarterly":
+                x_col, y_col, title = "quarter", "revenue", "Quarterly Revenue"
+                if "profit" in query_lower:
+                    y_col, title = "profit", "Quarterly Profit"
+                elif "margin" in query_lower:
+                    y_col, title = "margin", "Quarterly Profit Margin"
+                    
+            elif table == "satisfaction":
+                x_col, y_col, title = "metric", "score", "Customer Satisfaction Scores"
+                chart_type = "bar"
+                
+            elif table == "inventory":
+                x_col, y_col, title = "category", "total_value", "Inventory Value by Category"
+                chart_type = "bar"
             
-            # Generate the chart
+            # Generate chart
             result = generate_chart_tool(data, chart_type, x_col, y_col, title)
             logger.info(f"Chart generated: {chart_type} of {y_col} vs {x_col}")
             
-            # If query includes analysis keywords, add brief analysis
-            if any(word in query_lower for word in ['analyze', 'analysis', 'trend', 'compare', 'insight']):
-                # Calculate some basic stats
-                values = [row[y_col] for row in data]
-                if values:
-                    min_val = min(values)
-                    max_val = max(values)
-                    avg_val = sum(values) / len(values)
-                    growth = ((max_val - min_val) / min_val * 100) if min_val > 0 else 0
+            # Calculate statistics
+            values = [row[y_col] for row in data]
+            if values:
+                min_val = min(values)
+                max_val = max(values)
+                avg_val = sum(values) / len(values)
+                total_val = sum(values)
+                growth = ((max_val - min_val) / min_val * 100) if min_val > 0 else 0
+                
+                result['analysis'] = {
+                    'min': min_val,
+                    'max': max_val,
+                    'average': round(avg_val, 2),
+                    'total': total_val,
+                    'growth_percent': round(growth, 1)
+                }
+                
+                # Add text report if requested
+                if has_report_keyword:
+                    report_lines = []
+                    report_lines.append(f"## {title}")
+                    report_lines.append("")
+                    report_lines.append("### Key Metrics")
                     
-                    # Add analysis to the result
-                    result['analysis'] = {
-                        'min': min_val,
-                        'max': max_val,
-                        'average': round(avg_val, 2),
-                        'growth_percent': round(growth, 1)
-                    }
+                    if y_col in ['revenue', 'expenses', 'cost', 'profit', 'total_value', 'avg_salary']:
+                        report_lines.append(f"- **Minimum:** ${min_val:,.0f}")
+                        report_lines.append(f"- **Maximum:** ${max_val:,.0f}")
+                        report_lines.append(f"- **Average:** ${avg_val:,.2f}")
+                        report_lines.append(f"- **Total:** ${total_val:,.0f}")
+                    else:
+                        report_lines.append(f"- **Minimum:** {min_val:,.0f}")
+                        report_lines.append(f"- **Maximum:** {max_val:,.0f}")
+                        report_lines.append(f"- **Average:** {avg_val:,.2f}")
+                        report_lines.append(f"- **Total:** {total_val:,.0f}")
+                    
+                    report_lines.append(f"- **Growth:** {growth:.1f}%")
+                    report_lines.append("")
+                    report_lines.append("### Analysis")
+                    
+                    if growth > 50:
+                        report_lines.append(f"📈 **Strong Growth:** Exceptional growth of {growth:.1f}% indicates robust performance.")
+                    elif growth > 20:
+                        report_lines.append(f"📊 **Positive Trend:** Steady growth of {growth:.1f}% demonstrates healthy progress.")
+                    elif growth > 0:
+                        report_lines.append(f"➡️ **Moderate Growth:** Growth of {growth:.1f}% shows stable performance.")
+                    else:
+                        report_lines.append(f"⚠️ **Declining Trend:** Negative growth of {growth:.1f}% requires attention.")
+                    
+                    report_lines.append("")
+                    report_lines.append("### Data Summary")
+                    report_lines.append("")
+                    report_lines.append(f"| {x_col.title()} | {y_col.title()} |")
+                    report_lines.append("|--------|-------|")
+                    
+                    for row in data:
+                        period = row.get(x_col, '')
+                        value = row.get(y_col, 0)
+                        if y_col in ['revenue', 'expenses', 'cost', 'profit', 'total_value', 'avg_salary']:
+                            report_lines.append(f"| {period} | ${value:,.0f} |")
+                        else:
+                            report_lines.append(f"| {period} | {value:,.0f} |")
+                    
+                    report_lines.append("")
+                    report_lines.append("### Recommendations")
+                    
+                    if y_col == 'revenue' and growth > 0:
+                        report_lines.append("- Continue current growth strategies")
+                        report_lines.append("- Monitor market trends for sustained growth")
+                        report_lines.append("- Consider scaling operations")
+                    elif y_col == 'expenses':
+                        report_lines.append("- Review expense trends for optimization")
+                        report_lines.append("- Identify cost reduction opportunities")
+                        report_lines.append("- Maintain balance with revenue")
+                    else:
+                        report_lines.append("- Monitor trends regularly")
+                        report_lines.append("- Implement data-driven strategies")
+                        report_lines.append("- Focus on continuous improvement")
+                    
+                    result['report'] = '\n'.join(report_lines)
             
             return json.dumps(result), {}
             
         except Exception as e:
-            logger.error(f"Direct chart generation failed: {e}", exc_info=True)
+            logger.error(f"Direct chart generation failed: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return f"Error generating chart: {str(e)}", {}
     
-    # For analysis requests, use the agent with all tools
+    # For non-chart requests, use the agent
     system_prompt = """You are an AI Business Intelligence Dashboard Assistant.
 
-Your job is to analyze data, compute metrics, and create visualizations in a dashboard-quality format.
+Your job is to analyze data, compute metrics, and provide insights.
 
 AVAILABLE TOOLS:
-- Math: add(x, y), subtract(x, y), multiply(x, y), divide(x, y)
-- Statistics: calculate_average(numbers), percent_change(old, new)
-- Data: query_data_tool(table) - Returns list of dicts. Tables: "sales", "products", "traffic"
-- Charts: generate_chart_tool(data, chart_type, x, y, title) - Returns dict with base64 image
+- Math: add, subtract, multiply, divide, calculate_average, percent_change
+- Data: query_data_tool(table) - Available tables: sales, products, traffic, demographics, regions, marketing, employees, quarterly, satisfaction, inventory
 
-===========================================
-HOW TO USE GENERATE_CHART_TOOL CORRECTLY
-===========================================
-The generate_chart_tool requires these parameters:
-1. data: The FULL list of dictionaries from query_data_tool (pass it directly!)
-2. chart_type: "line", "bar", or "scatter"
-3. x: Column name for x-axis (e.g., "month", "product", "day")
-4. y: Column name for y-axis (e.g., "revenue", "expenses", "visitors")
-5. title: Chart title string
+INSTRUCTIONS:
+- Always use tools for calculations
+- Provide clear, concise answers
+- Include business insights
+- Format responses professionally
 
-CORRECT EXAMPLE:
-Step 1: sales_data = query_data_tool("sales")
-Step 2: generate_chart_tool(sales_data, "line", "month", "revenue", "Monthly Revenue Trend")
-
-WRONG - Don't do this:
-- generate_chart_tool([12000, 18000, ...], "line", ...) ❌ (Don't extract values)
-- generate_chart_tool(sales_data[0], ...) ❌ (Don't pass single row)
-- generate_chart_tool("sales", ...) ❌ (Don't pass table name)
-
-CORRECT - Do this:
-- Pass the ENTIRE data list from query_data_tool ✓
-
-===========================================
-FINAL USER-FACING OUTPUT REQUIREMENTS
-===========================================
-Your responses MUST follow a business-dashboard-friendly format:
-
-1. **Headline Metric**  
-   Give the direct answer clearly (big number or KPI style).
-
-2. **Supporting Calculation / Short Summary**  
-   Provide a concise, friendly explanation of how the tool result was obtained.
-   Example:
-   “Using the calculation tool, I added 25 and 42, resulting in **67**.”
-
-3. **Optional Data Table (if helpful)**  
-   Display key values used in the calculation or analysis.
-
-4. **Visualization**  
-   If the user asks for a chart—or if a chart meaningfully enhances the insight—  
-   call `generate_chart` and return the base64 image along with a short explanation.
-
-5. **Business Insight**  
-   End with a one-sentence interpretation, such as:  
-   “Revenue continues an upward trend, indicating strong month-over-month growth.”
-
-===========================================
-VOICE & STYLE
-===========================================
-• Clear, concise, executive-level tone  
-• Avoid jargon unless necessary  
-• Provide insights, not just numbers  
-• Always sound like a BI dashboard or analytics tool  
-• Never reveal chain-of-thought—summarize instead  
-• Always use tools for actual computation or data extraction
-
-===========================================
-EXAMPLE RESPONSE STYLE
-===========================================
-
-User: “Add 20 and 40.”
-
-Assistant:
-**KPI Result:** 60  
-**How I computed it:** I used the calculation tool to add 20 and 40.  
-**Insight:** This represents the combined total across both values.
-
-User: “Show revenue vs expenses by month.”
-
-Assistant:
-1. Fetch sales data using `query_data('sales')`  
-2. Create a bar or line chart using `generate_chart`  
-3. Return a dashboard-style summary:
-   • Revenue is rising steadily  
-   • Expenses grow at a slower rate  
-   • Profit margin is improving
-
-===========================================
-CRITICAL CHART EXAMPLE
-===========================================
-User: "Analyze revenue with a chart"
-
-CORRECT TOOL USAGE:
-1. data = query_data_tool("sales")
-2. generate_chart_tool(data, "line", "month", "revenue", "Revenue Trend")
-   ↑ Pass the FULL data list, not extracted values!
-
-===========================================
-BEHAVIOR RULES
-===========================================
-- ALWAYS pass full data list to generate_chart_tool (not values!)
-- Use calculate_average tool for averages
-- Always use tools for math or data lookups
-- Provide dashboard-style summaries with insights
-
-
-
+Example: "Calculate average monthly revenue"
+1. Call query_data_tool("sales")
+2. Extract revenue values
+3. Call calculate_average(values)
+4. Present result with context
 """
 
     try:
         agent = Agent(
             model=model,
             system_prompt=system_prompt,
-            tools=ANALYTICS_TOOLS,  # Include ALL tools including generate_chart_tool
+            tools=ANALYTICS_TOOLS,
             name="AnalyticsAssistant"
         )
 
@@ -424,11 +449,10 @@ def get_analytics_response(query: str):
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "demo":
         print("Analytics Agent Demo")
-        result, _ = get_analytics_response("show me monthly revenue chart")
+        result, _ = get_analytics_response("show monthly revenue chart")
         if "image_base64" in result:
             print("SUCCESS: Chart JSON returned")
-            print(f"JSON length: {len(result)}")
         else:
             print("Response:", result[:200])
     else:
-        print("Usage: python analytics_agent_fixed.py demo")
+        print("Usage: python analytics_agent.py demo")

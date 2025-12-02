@@ -240,6 +240,16 @@ const AnalyticsHub = () => {
                               {aiResponse.description}
                             </p>
                           </div>
+                          
+                          {/* Report Text (if available) */}
+                          {aiResponse.report && (
+                            <div className="mt-6 prose prose-sm max-w-none prose-emerald bg-white rounded-lg p-6 border border-gray-200">
+                              <MarkdownRenderer
+                                content={aiResponse.report}
+                                themeColor="emerald"
+                              />
+                            </div>
+                          )}
                         </div>
                       ) : (
                         // Text response with markdown
