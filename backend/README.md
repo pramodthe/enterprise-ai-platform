@@ -46,7 +46,7 @@ USE_BEDROCK=True
 AWS_ACCESS_KEY_ID=your_aws_access_key
 AWS_SECRET_ACCESS_KEY=your_aws_secret_key
 AWS_DEFAULT_REGION=us-east-1
-BEDROCK_MODEL_ID=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+BEDROCK_MODEL_ID=anthropic.claude-haiku-4-5-20251001-v1:0
 
 # Alternative: Anthropic API (if not using Bedrock)
 # USE_BEDROCK=False
@@ -67,7 +67,7 @@ SUPABASE_KEY=your_supabase_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
 # Application Settings
-DEFAULT_MODEL=us.anthropic.claude-sonnet-4-5-20250929-v1:0
+DEFAULT_MODEL=anthropic.claude-haiku-4-5-20251001-v1:0
 MAX_TOKENS=1028
 TEMPERATURE=0.3
 DEBUG=False
@@ -233,7 +233,7 @@ The platform includes comprehensive tracing for all agent interactions:
     tags=["agent:hr"],
     metadata={
         "model_provider": "bedrock",
-        "model_id": "claude-sonnet-4-5",
+        "model_id": "claude-haiku-4-5",
         "agent_type": "hr"
     }
 )
@@ -252,7 +252,7 @@ Status: Success
 
 ├─ hr_agent_query (2.1s)
 │  ├─ Input: "Who reports to Jennifer Lee?"
-│  ├─ Model: us.anthropic.claude-sonnet-4-5-20250929-v1:0
+│  ├─ Model: anthropic.claude-haiku-4-5-20251001-v1:0
 │  ├─ Tokens: 156 input, 89 output
 │  └─ Output: "John Smith and David Wilson report to Jennifer Lee..."
 │

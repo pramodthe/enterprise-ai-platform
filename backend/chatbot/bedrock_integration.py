@@ -53,7 +53,7 @@ class BedrockIntegration:
         aws_access_key_id: Optional[str] = None,
         aws_secret_access_key: Optional[str] = None,
         region_name: str = "us-east-1",
-        model_id: str = "anthropic.claude-sonnet-v1:0",
+        model_id: str = "anthropic.claude-haiku-4-5-20251001-v1:0",
         max_tokens: int = 1028,
         temperature: float = 0.3,
         max_retries: int = 3,
@@ -68,7 +68,7 @@ class BedrockIntegration:
             aws_access_key_id: AWS access key ID (defaults to env var)
             aws_secret_access_key: AWS secret access key (defaults to env var)
             region_name: AWS region (default: us-east-1)
-            model_id: Bedrock model ID (default: anthropic.claude-sonnet-v1:0)
+            model_id: Bedrock model ID (default: anthropic.claude-haiku-4-5-20251001-v1:0)
             max_tokens: Maximum tokens for response (default: 1028)
             temperature: Model temperature (default: 0.3)
             max_retries: Maximum retry attempts (default: 3)
@@ -90,7 +90,7 @@ class BedrockIntegration:
             aws_access_key_id = aws_access_key_id or os.getenv("AWS_ACCESS_KEY_ID")
             aws_secret_access_key = aws_secret_access_key or os.getenv("AWS_SECRET_ACCESS_KEY")
             region_name = region_name or os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-            model_id = model_id or os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-v1:0")
+            model_id = model_id or os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
             
             # Validate AWS credentials
             if not aws_access_key_id or not aws_secret_access_key:

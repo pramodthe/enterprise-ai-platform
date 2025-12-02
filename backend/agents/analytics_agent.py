@@ -43,7 +43,7 @@ if USE_BEDROCK:
     model = BedrockModel(
         max_tokens=2048,
         temperature=0.3,
-        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-3-haiku-20240307-v1:0")
+        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
     )
 
 else:

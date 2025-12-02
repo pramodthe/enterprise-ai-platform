@@ -28,7 +28,7 @@ QDRANT_COLLECTION_NAME: str = os.getenv("QDRANT_COLLECTION_NAME", "documents")
 # LLM model IDs (Haiku defaults)
 BEDROCK_MODEL_ID_DEFAULT: str = os.getenv(
     "BEDROCK_MODEL_ID",
-    "anthropic.claude-3-haiku-20240307-v1:0",
+    "anthropic.claude-haiku-4-5-20251001-v1:0",
 )
 ANTHROPIC_MODEL_ID_DEFAULT: str = os.getenv(
     "DEFAULT_MODEL",

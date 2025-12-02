@@ -1,10 +1,9 @@
 """
 HR Agent for the Enterprise AI Assistant Platform
-Adapted from the existing A2A system in the codebase
 """
 import os
-from urllib.parse import urlparse
 import logging
+from typing import Tuple, List
 from dotenv import load_dotenv
 
 # Load environment variables first
@@ -21,9 +20,6 @@ if os.getenv("USE_BEDROCK", "False").lower() == "true":
     # Use AWS Bedrock
     from strands import Agent
     from strands.models.bedrock import BedrockModel
-    from strands.multiagent.a2a import A2AServer
-    from strands.tools.mcp.mcp_client import MCPClient
-    from mcp.client.streamable_http import streamablehttp_client
 
     # Use Bedrock model
     import boto3
@@ -36,38 +32,60 @@ if os.getenv("USE_BEDROCK", "False").lower() == "true":
     model = BedrockModel(
         client=bedrock_runtime,
         max_tokens=1028,
-        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-v1:0"),
+        model_id=os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0"),
         temperature=0.3
     )
 else:
     # Use Anthropic model (original implementation)
     from strands import Agent
     from strands.models.anthropic import AnthropicModel
-    from strands.multiagent.a2a import A2AServer
-    from strands.tools.mcp.mcp_client import MCPClient
-    from mcp.client.streamable_http import streamablehttp_client
 
     model = AnthropicModel(
         client_args={
             "api_key": os.getenv("api_key"),  # Required API key
         },
         max_tokens=1028,
-        model_id=os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219"),  # Using the same model from original code
+        model_id=os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219"),
         params={
             "temperature": 0.3,
         }
     )
 
-# Configuration - using the same pattern as the existing A2A system
-EMPLOYEE_INFO_URL = os.getenv("EMPLOYEE_MCP_URL", "http://localhost:8002/mcp/")
-EMPLOYEE_AGENT_URL = os.getenv("EMPLOYEE_AGENT_URL", "http://localhost:8001/")
-HR_AGENT_PORT = int(os.getenv("HR_AGENT_PORT", "8000"))
+def search_company_documents(query: str) -> str:
+    """
+    Search company documents for policies, procedures, and guidelines.
+    Use this tool when you need to look up HR policies, benefits information,
+    procedures, or any other company documentation.
+    
+    Args:
+        query: The search query for company documents (e.g., "PTO policy", "remote work guidelines")
+    
+    Returns:
+        str: The relevant information from company documents
+    """
+    try:
+        # Import here to avoid circular dependency
+        from backend.agents.document_agent import get_document_response
+        
+        logger.info(f"HR agent querying document agent: {query}")
+        answer, sources = get_document_response(query)
+        
+        # Format the response with sources
+        if sources:
+            source_list = ", ".join(set(sources))
+            return f"{answer}\n\nSources: {source_list}"
+        return answer
+        
+    except Exception as e:
+        logger.error(f"Error querying document agent: {e}")
+        return f"I couldn't access the company documents at this time. Error: {str(e)}"
+
 
 def _get_hr_agent_response_impl(question: str) -> str:
     """
     Internal implementation of HR agent response (without tracing decorator).
     """
-    # System prompt for HR agent with sample data
+    # System prompt for HR agent with sample data and document search capability
     hr_system_prompt = """
     You are an HR assistant that helps with employee queries.
     
@@ -86,17 +104,31 @@ def _get_hr_agent_response_impl(question: str) -> str:
       - CPO: Mark Thompson (manages: Sarah Johnson, Emily Davis)
       - Head of Data: Lisa Brown (manages: Michael Chen)
     
-    When asked about employees, skills, or organizational structure, 
-    use this information to provide accurate responses.
+    You also have access to a tool called 'search_company_documents' that can search through 
+    company policies, handbooks, procedures, and guidelines.
+    
+    When to use the search_company_documents tool:
+    - When asked about HR policies (PTO, vacation, sick leave, etc.)
+    - When asked about benefits (health insurance, 401k, etc.)
+    - When asked about procedures (onboarding, performance reviews, etc.)
+    - When asked about company guidelines (remote work, code of conduct, etc.)
+    - When you need official policy information beyond the employee data above
+    
+    When answering questions:
+    1. For employee/org structure queries, use the data above
+    2. For policy/procedure queries, use the search_company_documents tool
+    3. Combine both sources when relevant (e.g., "What's the PTO policy for engineers?")
+    
     Be professional and concise in your responses.
     """
     
-    # Create HR agent without MCP tools for now
+    # Create HR agent with document search tool
     hr_agent = Agent(
         model=model,
         name="HR Assistant",
-        description="Answers HR-related questions about employees",
-        system_prompt=hr_system_prompt
+        description="Answers HR-related questions about employees and company policies",
+        system_prompt=hr_system_prompt,
+        tools=[search_company_documents]
     )
     
     # Process the question and return response
@@ -115,7 +147,7 @@ def get_hr_agent_response(question: str) -> str:
     model_provider = "bedrock" if use_bedrock else "anthropic"
     
     if use_bedrock:
-        model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-v1:0")
+        model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
     else:
         model_id = os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219")
     
@@ -159,44 +191,3 @@ def get_hr_agent_response(question: str) -> str:
         # Tracing is disabled, run without tracing
         return _get_hr_agent_response_impl(question)
 
-# For direct usage
-def create_hr_a2a_server():
-    """
-    Create an A2A server for the HR agent
-    """
-    # Create MCP client for employee data
-    def create_mcp_transport():
-        return streamablehttp_client(EMPLOYEE_INFO_URL)
-
-    mcp_client = MCPClient(create_mcp_transport)
-    
-    # System prompt for HR agent
-    hr_system_prompt = """
-    You are an HR assistant that helps with employee queries.
-    You have access to employee data through tools.
-    When asked about employees, skills, or organizational structure, 
-    use the available tools to find accurate information.
-    Be professional and concise in your responses.
-    """
-    
-    with mcp_client:
-        # Get tools from MCP server
-        tools = mcp_client.list_tools_sync()
-        
-        # Create HR agent
-        hr_agent = Agent(
-            model=model,
-            name="HR Assistant",
-            description="Answers HR-related questions about employees",
-            tools=tools,
-            system_prompt=hr_system_prompt
-        )
-        
-        # Create A2A server
-        a2a_server = A2AServer(
-            agent=hr_agent, 
-            host=urlparse(EMPLOYEE_AGENT_URL).hostname, 
-            port=int(urlparse(EMPLOYEE_AGENT_URL).port)
-        )
-        
-        return a2a_server

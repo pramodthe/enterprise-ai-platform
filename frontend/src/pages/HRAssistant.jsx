@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import MarkdownRenderer from '../components/MarkdownRenderer';
 import { IUsers, ISparkles, ISearch, IArrowRight } from '../components/icons';
 import { hrQuery } from '../services/api';
 
@@ -52,36 +52,51 @@ const HRAssistant = () => {
 
   return (
     <div className="h-full flex flex-col bg-white">
-      <div className="px-6 pt-6 pb-0 border-b border-gray-200 bg-white">
+      <div className="px-6 py-6 border-b border-gray-200 bg-white flex-shrink-0">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl"><IUsers className="w-6 h-6" /></div>
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">HR Assistant</h2>
-            <p className="text-gray-500 text-sm">Employee directory, skill matching, and organizational insights</p>
+            <h2 className="text-lg font-bold text-gray-900">HR Assistant</h2>
+            <p className="text-xs text-gray-500">Employee directory, skill matching, and organizational insights</p>
           </div>
         </div>
         <div className="flex gap-6">
-          <button onClick={() => setActiveTab('agent')} className={`pb-3 text-sm font-medium transition-all relative ${activeTab === 'agent' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>AI Agent & Queries{activeTab === 'agent' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full"></div>}</button>
-          <button onClick={() => setActiveTab('directory')} className={`pb-3 text-sm font-medium transition-all relative ${activeTab === 'directory' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>Full Directory{activeTab === 'directory' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full"></div>}</button>
+          <button onClick={() => setActiveTab('agent')} className={`pb-3 text-xs font-medium transition-all relative ${activeTab === 'agent' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>AI Agent & Queries{activeTab === 'agent' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full"></div>}</button>
+          <button onClick={() => setActiveTab('directory')} className={`pb-3 text-xs font-medium transition-all relative ${activeTab === 'directory' ? 'text-indigo-600' : 'text-gray-500 hover:text-gray-700'}`}>Full Directory{activeTab === 'directory' && <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-indigo-600 rounded-t-full"></div>}</button>
         </div>
       </div>
 
       <div className="flex-1 bg-gray-50 p-6 overflow-y-auto">
         {activeTab === 'agent' && (
-          <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 space-y-6">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-1">
-                <textarea value={agentQuery} onChange={(e) => setAgentQuery(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAskAgent(); } }} placeholder="Ask about employees, skills, policies, or org charts..." className="w-full p-4 min-h-[120px] bg-transparent text-gray-900 placeholder-gray-400 focus:outline-none resize-none text-base" />
-                <div className="flex justify-between items-center px-4 pb-3 pt-2 border-t border-gray-100">
-                  <div className="text-xs text-gray-400 flex items-center gap-1"><ISparkles className="w-3 h-3" /><span>AI-powered search</span></div>
-                  <button onClick={() => handleAskAgent()} disabled={isThinking || !agentQuery.trim()} className="bg-indigo-600 text-white px-5 py-2 rounded-xl font-medium text-sm hover:bg-indigo-700 transition-colors disabled:opacity-50 shadow-sm">{isThinking ? 'Processing...' : 'Ask HR Agent'}</button>
+          <div className="max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
+            <div className="lg:col-span-2 space-y-8">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <h3 className="text-sm font-bold text-gray-900 mb-4">Custom Query</h3>
+                <div className="relative">
+                  <textarea
+                    value={agentQuery}
+                    onChange={(e) => setAgentQuery(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAskAgent(); } }}
+                    placeholder="Ask about employees, skills, policies, or org charts..."
+                    className="w-full p-3 min-h-[100px] bg-white border border-gray-300 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-gray-900 text-sm resize-none placeholder-gray-400"
+                  />
+                  <button
+                    onClick={() => handleAskAgent()}
+                    disabled={isThinking || !agentQuery.trim()}
+                    className="absolute bottom-3 right-3 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 transition-colors disabled:opacity-50"
+                  >
+                    {isThinking ? 'Processing...' : 'Ask HR Agent'}
+                  </button>
                 </div>
               </div>
+
               {agentResponse && (
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
-                  <div className="bg-indigo-50 px-6 py-3 border-b border-indigo-100 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-indigo-500"></div><h3 className="font-semibold text-indigo-900 text-sm">HR Agent Response</h3></div>
+                  <div className="bg-indigo-50 px-6 py-3 border-b border-indigo-100 flex items-center gap-2"><div className="w-2 h-2 rounded-full bg-indigo-500"></div><h3 className="font-semibold text-indigo-900 text-xs">HR Agent Response</h3></div>
                   <div className="p-6 space-y-6">
-                    <div className="prose prose-sm max-w-none text-gray-700 leading-relaxed"><ReactMarkdown>{agentResponse.text}</ReactMarkdown></div>
+                    <div className="prose prose-sm max-w-none prose-indigo">
+                      <MarkdownRenderer content={agentResponse.text} themeColor="indigo" />
+                    </div>
                     {agentResponse.data && (
                       <div className="mt-4 pt-4 border-t border-gray-100">
                         <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Relevant Records</p>
@@ -102,38 +117,47 @@ const HRAssistant = () => {
                   </div>
                 </div>
               )}
+
               {!agentResponse && !isThinking && (
                 <div className="flex flex-col items-center justify-center py-12 text-center">
                   <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 text-gray-300 border border-gray-100 shadow-sm"><ISparkles className="w-8 h-8" /></div>
-                  <h3 className="text-gray-900 font-medium">Ready to help</h3>
-                  <p className="text-gray-500 text-sm max-w-xs mt-1">Ask me to find talent, explain policies, or visualize team structures.</p>
+                  <h3 className="text-gray-900 font-medium text-sm">Ready to help</h3>
+                  <p className="text-gray-500 text-xs max-w-xs mt-1">Ask me to find talent, explain policies, or visualize team structures.</p>
                 </div>
               )}
             </div>
-            <div className="space-y-4">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5">
-                <h3 className="font-bold text-gray-900 mb-4">Example Queries</h3>
+
+            <div className="space-y-6">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+                <h3 className="font-semibold text-gray-900 mb-4 text-sm">Example Queries</h3>
                 <div className="space-y-2">
-                  {["Find employees with Python skills","Show organizational chart for Engineering","List employees with AWS certification","Who are the team leads in Marketing?","Draft a job description for a Senior React Dev","What is the remote work policy?"].map((q, idx) => (
-                    <button key={idx} onClick={() => handleAskAgent(q)} className="w-full text-left p-3 rounded-xl border border-gray-100 bg-gray-50 text-xs sm:text-sm text-gray-600 hover:border-indigo-300 hover:text-indigo-600 transition-all group flex items-center justify-between">
+                  {["Find employees with Python skills", "Show organizational chart for Engineering", "List employees with AWS certification", "Who are the team leads in Marketing?", "Draft a job description for a Senior React Dev", "What is the remote work policy?"].map((q, idx) => (
+                    <button key={idx} onClick={() => handleAskAgent(q)} className="w-full text-left px-3 py-2 rounded-lg bg-gray-50 hover:bg-indigo-50 text-xs text-gray-600 hover:text-indigo-700 transition-colors flex items-center justify-between group">
                       <span>{q}</span>
-                      <IArrowRight className="w-3.5 h-3.5 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-500" />
+                      <IArrowRight className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity text-indigo-500" />
                     </button>
                   ))}
                 </div>
               </div>
               <div className="bg-gradient-to-br from-indigo-600 to-blue-600 rounded-2xl shadow-lg p-5 text-white">
-                <h3 className="font-bold text-lg mb-2">Did you know?</h3>
-                <p className="text-indigo-100 text-sm mb-4 leading-relaxed">You can ask complex questions like "Who in Engineering knows Python and has leadership experience?" to get multi-criteria matches.</p>
+                <h3 className="font-bold text-sm mb-2">Did you know?</h3>
+                <p className="text-indigo-100 text-xs mb-4 leading-relaxed">You can ask complex questions like "Who in Engineering knows Python and has leadership experience?" to get multi-criteria matches.</p>
               </div>
             </div>
           </div>
         )}
+
         {activeTab === 'directory' && (
           <div className="max-w-6xl mx-auto">
             <div className="relative mb-6">
               <ISearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input type="text" placeholder="Search by name, role, or department..." className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none shadow-sm" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+              <input
+                type="text"
+                placeholder="Search by name, role, or department..."
+                className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-xl bg-white text-gray-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none text-sm placeholder-gray-400 shadow-sm"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredEmployees.map(emp => (
@@ -141,8 +165,8 @@ const HRAssistant = () => {
                   <div className="flex items-center mb-4">
                     <img src={emp.avatar} alt={emp.name} className="w-12 h-12 rounded-full mr-4 object-cover bg-gray-200" />
                     <div>
-                      <h3 className="font-bold text-gray-900">{emp.name}</h3>
-                      <p className="text-sm text-indigo-600 font-medium">{emp.role}</p>
+                      <h3 className="font-bold text-gray-900 text-sm">{emp.name}</h3>
+                      <p className="text-xs text-indigo-600 font-medium">{emp.role}</p>
                     </div>
                   </div>
                   <div className="space-y-2">

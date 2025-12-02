@@ -307,7 +307,7 @@ async def query_all_agents(request: UnifiedQuery):
     model_provider = "bedrock" if use_bedrock else "anthropic"
     
     if use_bedrock:
-        model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-v1:0")
+        model_id = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-haiku-4-5-20251001-v1:0")
     else:
         model_id = os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219")
     
