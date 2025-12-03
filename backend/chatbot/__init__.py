@@ -2,24 +2,17 @@
 Root Chatbot module for the Enterprise AI Assistant Platform.
 """
 
-from backend.chatbot.models import (
-    Session,
-    Message,
+from backend.chatbot.root_chatbot import (
+    RootChatbot,
     ChatResponse,
-    RoutingDecision,
-    AgentResponse,
+    Message,
     MessageRole
 )
-from backend.chatbot.storage import (
-    StorageBackend,
-    InMemoryStorageBackend,
-    RedisStorageBackend
-)
-from backend.chatbot.session_manager import SessionManager
-from backend.chatbot.agent_client import AgentClient
+from backend.chatbot.agent_router import AgentRouter, RoutingDecision
+from backend.chatbot.local_agent import LocalAgentClient, AgentResponse, AgentClient
 
 __all__ = [
-    'Session',
+    'RootChatbot',
     'Message',
     'ChatResponse',
     'RoutingDecision',

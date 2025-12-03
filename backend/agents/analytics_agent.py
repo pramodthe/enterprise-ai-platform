@@ -206,7 +206,7 @@ def _get_analytics_response_impl(query: str):
     query_lower = query.lower()
     
     # Keywords that indicate chart/visualization request
-    chart_keywords = ['chart', 'graph', 'plot', 'visualiz', 'visual', 'show', 'display', 'dashboard']
+    chart_keywords = ['chart', 'graph', 'plot', 'visualiz', 'visual', 'dashboard']
     calculation_only_keywords = ['add', 'subtract', 'multiply', 'divide', 'average of', 'mean of', 'sum of']
     report_keywords = ['report', 'comprehensive', 'analysis', 'dashboard', 'summary']
     
@@ -254,7 +254,12 @@ def _get_analytics_response_impl(query: str):
             
             # Determine x and y columns based on dataset
             if table == "sales":
-                x_col, y_col, title = "month", "revenue", "Monthly Revenue Trend"
+                # Create unique month labels (Month Year) to avoid duplicate months across years
+                # This prevents multiple overlapping lines
+                for row in data:
+                    row['month_label'] = f"{row['month']} {row['year']}"
+                
+                x_col, y_col, title = "month_label", "revenue", "Monthly Revenue Trend"
                 if "expense" in query_lower:
                     y_col, title = "expenses", "Monthly Expenses Trend"
                 elif "customer" in query_lower:

@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from backend.core.config import settings
-from backend.api.v1 import agents, hr, analytics, documents
+from backend.api.v1 import chatbot, hr, analytics, documents
 
 # Create FastAPI app
 app = FastAPI(
@@ -29,7 +29,7 @@ app.add_middleware(
 )
 
 # Include API routes
-app.include_router(agents.router, prefix="/api/v1", tags=["agents"])
+app.include_router(chatbot.router, prefix="/api/v1", tags=["chatbot"])
 app.include_router(hr.router, prefix="/api/v1", tags=["hr"])
 app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
 app.include_router(documents.router, prefix="/api/v1", tags=["documents"])

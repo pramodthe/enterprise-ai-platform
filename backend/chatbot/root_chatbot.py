@@ -2,38 +2,76 @@
 RootChatbot - Main conversational agent for the Enterprise AI Assistant Platform.
 
 This module implements the Root Chatbot that serves as the primary interface for users,
-managing conversation context, routing queries to specialized agents, and providing
-a seamless multi-turn conversation experience.
+routing queries to specialized agents and providing a seamless conversation experience.
 """
 import logging
-import os
 from typing import Optional, List, Dict, Any
 from datetime import datetime
+from dataclasses import dataclass, field
+from enum import Enum
 
-from backend.chatbot.models import (
-    ChatResponse, Message, MessageRole, Session, RoutingDecision
-)
-from backend.chatbot.session_manager import SessionManager
-from backend.chatbot.agent_router import AgentRouter
-from backend.chatbot.bedrock_integration import BedrockIntegration
+from strands import Agent
+
+from backend.chatbot.agent_router import AgentRouter, RoutingDecision
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+class MessageRole(str, Enum):
+    """Enumeration of message roles in a conversation."""
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+
+
+@dataclass
+class Message:
+    """
+    Represents a single message in a conversation.
+    """
+    role: str
+    content: str
+    timestamp: datetime
+    metadata: Optional[Dict[str, Any]] = None
+    agent_used: Optional[str] = None
+
+
+@dataclass
+class ChatResponse:
+    """
+    Represents a response from the Root Chatbot.
+    """
+    message: str
+    session_id: str
+    agent_used: str
+    confidence: float
+    timestamp: datetime
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize response to dictionary."""
+        return {
+            "message": self.message,
+            "session_id": self.session_id,
+            "agent_used": self.agent_used,
+            "confidence": self.confidence,
+            "timestamp": self.timestamp.isoformat(),
+            "metadata": self.metadata
+        }
 
 
 class RootChatbot:
     """
     Main conversational agent that orchestrates user interactions.
     
-    The RootChatbot maintains conversation context, intelligently routes queries
-    to specialized agents, and provides responses for general queries. It uses
-    AWS Bedrock (via Strands SDK) for language model capabilities.
+    The RootChatbot intelligently routes queries to specialized agents and provides 
+    responses for general queries. It uses AWS Bedrock (via Strands SDK) for 
+    language model capabilities.
     
     Attributes:
-        model: BedrockModel instance for generating responses
-        session_manager: SessionManager for handling conversation state
+        model: BedrockModel or AnthropicModel instance for generating responses
         agent_router: AgentRouter for determining query routing
-        max_context_tokens: Maximum tokens for context window (default: 4000)
         system_prompt: System prompt for the chatbot
     """
     
@@ -47,90 +85,56 @@ Be professional, concise, and helpful in your responses."""
     
     def __init__(
         self,
-        bedrock_integration: BedrockIntegration,
-        session_manager: SessionManager,
+        model: Any,
         agent_router: AgentRouter,
-        max_context_tokens: int = 4000,
         system_prompt: Optional[str] = None
     ):
         """
         Initialize the Root Chatbot with dependencies.
         
         Args:
-            bedrock_integration: BedrockIntegration instance for model interactions
-            session_manager: SessionManager for conversation state management
+            model: BedrockModel or AnthropicModel instance for model interactions
             agent_router: AgentRouter for query routing decisions
-            max_context_tokens: Maximum tokens for context window (default: 4000)
             system_prompt: Optional custom system prompt
         """
-        self.bedrock_integration = bedrock_integration
-        self.model = bedrock_integration.get_model()
-        self.session_manager = session_manager
+        self.model = model
         self.agent_router = agent_router
-        self.max_context_tokens = max_context_tokens
         self.system_prompt = system_prompt or self.DEFAULT_SYSTEM_PROMPT
         
-        logger.info(
-            f"Initialized RootChatbot with max_context_tokens={max_context_tokens}, "
-            f"using {'Bedrock' if bedrock_integration.is_using_bedrock() else 'Anthropic'}, "
-            f"guardrails={'enabled' if bedrock_integration.guardrail_id else 'disabled'}"
-        )
+        logger.info("Initialized RootChatbot with provided model")
     
     async def process_message(
         self,
         message: str,
-        session_id: Optional[str] = None,
-        user_id: Optional[str] = None
+        session_id: Optional[str] = None, # Kept for API compatibility but unused
+        user_id: Optional[str] = None      # Kept for API compatibility but unused
     ) -> ChatResponse:
         """
         Process a user message and return a response.
         
-        This is the main entry point for the Root Chatbot. It handles session
-        management, routing decisions, agent coordination, and response generation.
-        
         Args:
             message: The user's message
-            session_id: Optional session identifier for continuing conversations
-            user_id: Optional user identifier
+            session_id: Optional session identifier (unused in stateless mode)
+            user_id: Optional user identifier (unused in stateless mode)
             
         Returns:
-            ChatResponse containing the reply, session_id, and metadata
+            ChatResponse containing the reply and metadata
         """
         logger.info(f"Processing message: {message[:100]}...")
         
-        # Step 1: Session retrieval or creation
-        if session_id:
-            session = self.session_manager.get_session(session_id)
-            if session is None:
-                logger.warning(
-                    f"Session {session_id} not found. Creating new session."
-                )
-                session = self.session_manager.create_session(user_id)
-        else:
-            session = self.session_manager.create_session(user_id)
+        # In stateless mode, context is just the current message
+        # If we want to support history later, we should accept it as an argument
+        context = f"USER: {message}"
         
-        # Step 2: Add user message to conversation history
-        self.session_manager.add_message(
-            session=session,
-            role=MessageRole.USER,
-            content=message,
-            metadata={"timestamp": datetime.now().isoformat()}
-        )
-        
-        # Step 3: Build context from conversation history
-        context = self._build_context(session)
-        
-        # Step 4: Determine if we should route to a specialized agent
+        # Step 1: Determine if we should route to a specialized agent
         should_route = self._should_route_to_agent(message, context)
         
-        # Step 5: Get previous agent for sticky routing
-        previous_agent = self._get_previous_agent(session)
-        
-        # Step 6: Make routing decision
+        # Step 2: Make routing decision
+        # We don't have previous_agent in stateless mode
         routing_decision = self.agent_router.route_query(
             query=message,
             context=context,
-            previous_agent=previous_agent
+            previous_agent=None
         )
         
         logger.info(
@@ -138,8 +142,8 @@ Be professional, concise, and helpful in your responses."""
             f"(confidence: {routing_decision.confidence:.2f})"
         )
         
-        # Step 7: Process based on routing decision
-        if routing_decision.should_use_agent() and routing_decision.agent_name != "root":
+        # Step 3: Process based on routing decision
+        if routing_decision.should_use_agent(self.agent_router.confidence_threshold) and routing_decision.agent_name != "root":
             # Route to specialized agent
             response_content, agent_used = await self._handle_agent_query(
                 message=message,
@@ -154,128 +158,25 @@ Be professional, concise, and helpful in your responses."""
             )
             agent_used = "root"
         
-        # Step 8: Add assistant response to conversation history
-        self.session_manager.add_message(
-            session=session,
-            role=MessageRole.ASSISTANT,
-            content=response_content,
-            metadata={
-                "agent_used": agent_used,
-                "confidence": routing_decision.confidence,
-                "timestamp": datetime.now().isoformat()
-            }
-        )
-        
-        # Step 9: Create and return ChatResponse
+        # Step 4: Create and return ChatResponse
         response = ChatResponse(
             message=response_content,
-            session_id=session.session_id,
+            session_id=session_id or "stateless",
             agent_used=agent_used,
             confidence=routing_decision.confidence,
             timestamp=datetime.now(),
             metadata={
                 "routing_reasoning": routing_decision.reasoning,
                 "fallback_agents": routing_decision.fallback_agents,
-                "conversation_length": len(session.conversation_history)
+                "conversation_length": 1
             }
-        )
-        
-        logger.info(
-            f"Completed processing message for session {session.session_id}"
         )
         
         return response
     
-    def _build_context(self, session: Session) -> str:
-        """
-        Build context string from conversation history.
-        
-        Formats the conversation history into a string suitable for providing
-        context to the language model or for routing analysis. Implements
-        sliding window strategy to stay within token limits.
-        
-        Args:
-            session: Session containing conversation history
-            
-        Returns:
-            Formatted context string
-        """
-        # Get conversation history with sliding window
-        history = self._apply_sliding_window(session.conversation_history)
-        
-        # Format messages into context string
-        context_parts = []
-        for msg in history:
-            role_label = msg.role.upper() if hasattr(msg.role, 'upper') else str(msg.role).upper()
-            context_parts.append(f"{role_label}: {msg.content}")
-        
-        context = "\n".join(context_parts)
-        
-        logger.debug(
-            f"Built context with {len(history)} messages "
-            f"({len(context)} characters)"
-        )
-        
-        return context
-    
-    def _apply_sliding_window(self, messages: List[Message]) -> List[Message]:
-        """
-        Apply sliding window strategy to conversation history.
-        
-        Keeps the most recent messages that fit within the context window limit.
-        Uses a simple heuristic of ~4 characters per token for estimation.
-        
-        Args:
-            messages: Full conversation history
-            
-        Returns:
-            List of messages that fit within the context window
-        """
-        if not messages:
-            return []
-        
-        # Simple heuristic: ~4 characters per token
-        chars_per_token = 4
-        max_chars = self.max_context_tokens * chars_per_token
-        
-        # Start from the most recent messages and work backwards
-        selected_messages = []
-        current_chars = 0
-        
-        for message in reversed(messages):
-            message_chars = len(message.content) + 20  # +20 for role and formatting
-            
-            if current_chars + message_chars > max_chars:
-                # Would exceed limit, stop here
-                break
-            
-            selected_messages.insert(0, message)
-            current_chars += message_chars
-        
-        # Ensure we have at least the most recent message
-        if not selected_messages and messages:
-            selected_messages = [messages[-1]]
-        
-        if len(selected_messages) < len(messages):
-            logger.debug(
-                f"Applied sliding window: kept {len(selected_messages)}/{len(messages)} messages"
-            )
-        
-        return selected_messages
-    
     def _should_route_to_agent(self, message: str, context: str) -> bool:
         """
         Determine if message should be routed to a specialized agent.
-        
-        This is a preliminary check before making the full routing decision.
-        It helps optimize by avoiding unnecessary routing for clearly general queries.
-        
-        Args:
-            message: The user's message
-            context: Conversation context
-            
-        Returns:
-            True if the message might benefit from specialized agent routing
         """
         # Simple heuristic: check for common general query patterns
         general_patterns = [
@@ -295,25 +196,6 @@ Be professional, concise, and helpful in your responses."""
         # Otherwise, let the router decide
         return True
     
-    def _get_previous_agent(self, session: Session) -> Optional[str]:
-        """
-        Get the agent that handled the previous message.
-        
-        Used for sticky routing to maintain conversation continuity.
-        
-        Args:
-            session: Current session
-            
-        Returns:
-            Name of the previous agent, or None
-        """
-        # Look for the most recent assistant message
-        for message in reversed(session.conversation_history):
-            if message.role == MessageRole.ASSISTANT and message.agent_used:
-                return message.agent_used
-        
-        return None
-    
     async def _handle_agent_query(
         self,
         message: str,
@@ -322,17 +204,6 @@ Be professional, concise, and helpful in your responses."""
     ) -> tuple[str, str]:
         """
         Handle a query by routing to a specialized agent.
-        
-        Communicates with the specialized agent via A2A protocol and handles
-        failures with fallback strategies.
-        
-        Args:
-            message: The user's message
-            routing_decision: Routing decision with selected agent
-            context: Conversation context
-            
-        Returns:
-            Tuple of (response_content, agent_name)
         """
         agent_name = routing_decision.agent_name
         
@@ -390,17 +261,6 @@ Be professional, concise, and helpful in your responses."""
     ) -> tuple[str, str]:
         """
         Handle agent failure with fallback strategies.
-        
-        Tries fallback agents or falls back to general query handling.
-        
-        Args:
-            message: The user's message
-            context: Conversation context
-            failed_agent: Name of the agent that failed
-            routing_decision: Original routing decision with fallback options
-            
-        Returns:
-            Tuple of (response_content, agent_name)
         """
         # Try fallback agents
         for fallback_agent in routing_decision.fallback_agents:
@@ -446,49 +306,28 @@ Be professional, concise, and helpful in your responses."""
     ) -> str:
         """
         Handle a general query directly with the Root Chatbot.
-        
-        Uses the language model to generate a response for queries that don't
-        require specialized agent knowledge.
-        
-        Args:
-            message: The user's message
-            context: Conversation context
-            
-        Returns:
-            Response content string
         """
         logger.debug("Handling query with root chatbot (general knowledge)")
         
-        # Build conversation messages
-        messages = []
-        
-        if context:
-            # Parse context back into messages
-            for line in context.split('\n'):
-                if line.startswith('USER:'):
-                    messages.append({"role": "user", "content": line[5:].strip()})
-                elif line.startswith('ASSISTANT:'):
-                    messages.append({"role": "assistant", "content": line[10:].strip()})
-        
-        # Add current message
-        messages.append({"role": "user", "content": message})
-        
-        # Generate response using BedrockIntegration with retry logic
-        bedrock_response = await self.bedrock_integration.generate_response(
-            messages=messages,
-            system_prompt=self.system_prompt
-        )
-        
-        if bedrock_response.success:
-            logger.debug(
-                f"Generated response: {bedrock_response.content[:100]}... "
-                f"(metadata: {bedrock_response.metadata})"
+        try:
+            # Create agent with the model
+            agent = Agent(
+                model=self.model,
+                name="Root Chatbot",
+                description="General purpose conversational assistant",
+                system_prompt=self.system_prompt
             )
-            return bedrock_response.content
-        else:
-            logger.error(
-                f"Error generating response with Bedrock: {bedrock_response.error}"
-            )
+            
+            # Generate response
+            # Note: Strands Agent is synchronous, but we can run it in executor if needed
+            # For now, we'll assume it's fast enough or the underlying model handles async
+            response = agent(message)
+            
+            logger.debug(f"Generated response: {str(response)[:100]}...")
+            return str(response)
+            
+        except Exception as e:
+            logger.error(f"Error generating response: {str(e)}")
             return (
                 "I apologize, but I'm having trouble generating a response right now. "
                 "Please try again in a moment."

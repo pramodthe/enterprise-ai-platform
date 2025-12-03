@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import MarkdownRenderer from './MarkdownRenderer';
 import { ISparkles, IMessage, IChevronDown, ISend } from './icons';
 import RagResponseCard from './RagResponseCard';
 import { hrQuery, analyticsQuery, documentsQuery, agentsQuery } from '../services/api';
@@ -9,6 +9,13 @@ const AgentType = {
   ANALYST: 'Data Analyst',
   DOCS: 'Document Expert',
   GENERAL: 'Assistant',
+};
+
+const AgentColors = {
+  [AgentType.HR]: 'indigo',
+  [AgentType.ANALYST]: 'emerald',
+  [AgentType.DOCS]: 'purple',
+  [AgentType.GENERAL]: 'blue',
 };
 
 async function generate(agentType, text) {
@@ -27,6 +34,46 @@ async function generate(agentType, text) {
   const res = await agentsQuery(text);
   // Return the response as-is (could be string or object)
   return res.response || 'No response';
+}
+
+// Helper to sanitize JSON string with unescaped newlines
+function sanitizeJsonString(text) {
+  let result = '';
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (inString) {
+      if (char === '"' && !escape) {
+        inString = false;
+        result += char;
+      } else if (char === '\\' && !escape) {
+        escape = true;
+        result += char;
+      } else if (char === '\n') {
+        result += '\\n';
+        escape = false;
+      } else if (char === '\r') {
+        // Skip CR
+      } else if (char === '\t') {
+        result += '\\t';
+        escape = false;
+      } else {
+        result += char;
+        if (escape) escape = false;
+      }
+    } else {
+      if (char === '"') {
+        inString = true;
+        result += char;
+      } else {
+        result += char;
+      }
+    }
+  }
+  return result;
 }
 
 const UnifiedChat = ({ onClose }) => {
@@ -109,7 +156,7 @@ const UnifiedChat = ({ onClose }) => {
             <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-fade-in`}>
               {msg.role === 'user' && (
                 <div className="max-w-[85%] bg-gray-100 px-5 py-3 rounded-[26px] text-gray-900">
-                  <p className="whitespace-pre-wrap text-[15px] leading-relaxed">{msg.text}</p>
+                  <p className="whitespace-pre-wrap text-sm leading-relaxed">{msg.text}</p>
                 </div>
               )}
               {msg.role === 'model' && (
@@ -132,14 +179,50 @@ const UnifiedChat = ({ onClose }) => {
                         } else {
                           // It's a string, try to parse it in case it's a JSON string
                           try {
-                            const parsed = JSON.parse(msg.text);
+                            let textToParse = msg.text;
+                            // Try to extract JSON from code blocks if present
+                            const codeBlockMatch = textToParse.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+                            if (codeBlockMatch) {
+                              textToParse = codeBlockMatch[1];
+                            } else {
+                              // If no code block, try to find the first [ or {
+                              const firstBracket = textToParse.indexOf('[');
+                              const firstBrace = textToParse.indexOf('{');
+                              const startIdx = (firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace))
+                                ? firstBracket
+                                : firstBrace;
+
+                              if (startIdx !== -1) {
+                                textToParse = textToParse.substring(startIdx);
+                                // Determine if we are looking for an array or object based on the start char
+                                const isArray = textToParse.trim().startsWith('[');
+                                const lastIdx = isArray
+                                  ? textToParse.lastIndexOf(']')
+                                  : textToParse.lastIndexOf('}');
+
+                                if (lastIdx !== -1) {
+                                  textToParse = textToParse.substring(0, lastIdx + 1);
+                                }
+                              }
+                            }
+
+                            // Sanitize text before parsing to handle unescaped newlines
+                            const sanitizedText = sanitizeJsonString(textToParse);
+                            let parsed = JSON.parse(sanitizedText);
+
+                            // Handle array wrapper if present (some models return [{...}])
+                            if (Array.isArray(parsed) && parsed.length > 0) {
+                              parsed = parsed[0];
+                            }
+
                             if (parsed.answer_markdown || parsed.short_answer || parsed.sources) {
                               // This is the structured format from document agent
                               structuredData = parsed;
                             }
                           } catch (e) {
                             // Not JSON, render as regular markdown
-                            return <ReactMarkdown>{msg.text}</ReactMarkdown>;
+                            // Use MarkdownRenderer for consistency
+                            return <MarkdownRenderer content={msg.text} themeColor={AgentColors[selectedAgent]} />;
                           }
                         }
 
@@ -154,7 +237,7 @@ const UnifiedChat = ({ onClose }) => {
                           />;
                         } else {
                           // For regular responses, render as markdown
-                          return <ReactMarkdown>{msg.text}</ReactMarkdown>;
+                          return <MarkdownRenderer content={msg.text} themeColor={AgentColors[selectedAgent]} />;
                         }
                       })()}
                     </div>
@@ -182,7 +265,7 @@ const UnifiedChat = ({ onClose }) => {
       <div className="flex-none w-full bg-white p-4 z-20 border-t border-transparent">
         <div className="max-w-3xl mx-auto">
           <div className="relative flex flex-col bg-gray-100 rounded-[26px] px-4 py-3 shadow-sm border border-transparent focus-within:border-gray-300 transition-colors">
-            <textarea ref={textareaRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={`Message ${selectedAgent}...`} className="w-full max-h-[120px] bg-transparent border-none focus:ring-0 text-gray-900 placeholder-gray-500 resize-none text-[15px] custom-scrollbar leading-relaxed" rows={1} style={{ minHeight: '24px' }} />
+            <textarea ref={textareaRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKeyDown} placeholder={`Message ${selectedAgent}...`} className="w-full max-h-[120px] bg-transparent border-none focus:ring-0 text-gray-900 placeholder-gray-500 resize-none text-sm custom-scrollbar leading-relaxed" rows={1} style={{ minHeight: '24px' }} />
             <div className="flex justify-between items-center mt-2">
               <div className="flex gap-2"></div>
               <button onClick={handleSend} disabled={!input.trim() || isTyping} className={`p-2 rounded-xl transition-all duration-200 flex-shrink-0 ${input.trim() ? 'bg-black text-white hover:opacity-90' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}>

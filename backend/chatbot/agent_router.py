@@ -7,14 +7,43 @@ and conversation history.
 """
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 from collections import defaultdict
 
-from backend.chatbot.models import RoutingDecision
-from backend.chatbot.agent_client import AgentClient
+from backend.chatbot.local_agent import AgentClient
 
 # Configure logging
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RoutingDecision:
+    """
+    Represents a decision about which agent should handle a query.
+    
+    Attributes:
+        agent_name: Name of the selected agent
+        confidence: Confidence score for this decision (0.0 to 1.0)
+        reasoning: Explanation of why this agent was selected
+        fallback_agents: List of alternative agents if primary fails
+    """
+    agent_name: str
+    confidence: float
+    reasoning: str
+    fallback_agents: List[str] = field(default_factory=list)
+    
+    def should_use_agent(self, threshold: float = 0.5) -> bool:
+        """
+        Check if confidence exceeds threshold.
+        
+        Args:
+            threshold: Minimum confidence required (default: 0.5)
+            
+        Returns:
+            True if confidence is above threshold
+        """
+        return self.confidence >= threshold
 
 
 class AgentRouter:
@@ -48,7 +77,8 @@ class AgentRouter:
             "mentoring", "coaching", "career",
             # Employee relations
             "manager", "supervisor", "report", "reporting", "hierarchy",
-            "department", "role", "position", "job", "title"
+            "department", "role", "position", "job", "title",
+            "ceo", "cto", "cfo", "cpo", "cmo", "executive", "chief", "lead", "head"
         },
         "analytics": {
             # Mathematical operations
@@ -71,8 +101,7 @@ class AgentRouter:
             "procedure", "procedures", "guideline", "guidelines", "protocol",
             "standard", "standards", "regulation", "regulations",
             # Document actions
-            "search", "find", "lookup", "look up", "retrieve", "locate",
-            "read", "view", "check", "reference", "consult",
+            "reference",
             # Document content
             "rule", "rules", "requirement", "requirements", "compliance",
             "code of conduct", "ethics", "legal", "contract", "agreement",
@@ -86,14 +115,14 @@ class AgentRouter:
     def __init__(
         self,
         agents: Optional[Dict[str, AgentClient]] = None,
-        confidence_threshold: float = 0.5
+        confidence_threshold: float = 0.4  # Lowered from 0.5
     ):
         """
         Initialize the AgentRouter with available agents.
         
         Args:
             agents: Dictionary mapping agent names to AgentClient instances
-            confidence_threshold: Minimum confidence for routing (default: 0.5)
+            confidence_threshold: Minimum confidence for routing (default: 0.4)
         """
         self.agents: Dict[str, AgentClient] = agents or {}
         self.agent_keywords: Dict[str, Set[str]] = {}
@@ -172,9 +201,9 @@ class AgentRouter:
         
         best_agent, best_score = sorted_agents[0]
         
-        # Normalize score to 0-1 range (assuming max possible score is around 10)
-        # This is a heuristic normalization
-        normalized_confidence = min(best_score / 10.0, 1.0)
+        # Normalize score to 0-1 range
+        # Heuristic: 2.0 score (e.g. 2 keywords or 1 strong keyword) = 100% confidence
+        normalized_confidence = min(best_score / 2.0, 1.0)
         
         # Prepare fallback agents (next best options)
         fallback_agents = [agent for agent, score in sorted_agents[1:3] if score > 0]
