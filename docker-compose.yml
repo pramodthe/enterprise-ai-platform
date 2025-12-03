@@ -21,7 +21,19 @@ services:
       - SUPABASE_BUCKET=${SUPABASE_BUCKET}
       - OPIK_API_KEY=${OPIK_API_KEY}
       - OPIK_PROJECT_NAME=${OPIK_PROJECT_NAME}
+      - OPIK_PROJECT_NAME=${OPIK_PROJECT_NAME}
       - OPIK_WORKSPACE=${OPIK_WORKSPACE}
+      - QDRANT_URL=http://qdrant:6333
+    restart: unless-stopped
+    networks:
+      - app-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
     restart: unless-stopped
     networks:
       - app-network
@@ -40,6 +52,9 @@ services:
     restart: unless-stopped
     networks:
       - app-network
+
+volumes:
+  qdrant_data:
 
 networks:
   app-network:
