@@ -21,7 +21,6 @@ services:
       - SUPABASE_BUCKET=${SUPABASE_BUCKET}
       - OPIK_API_KEY=${OPIK_API_KEY}
       - OPIK_PROJECT_NAME=${OPIK_PROJECT_NAME}
-      - OPIK_PROJECT_NAME=${OPIK_PROJECT_NAME}
       - OPIK_WORKSPACE=${OPIK_WORKSPACE}
       - QDRANT_URL=http://qdrant:6333
     restart: unless-stopped
