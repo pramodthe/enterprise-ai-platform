@@ -11,6 +11,7 @@ import {
 import { documentsQuery, listDocuments, deleteDocument, uploadDocument } from '../services/api';
 import RagResponseCard from './RagResponseCard';
 import MessageBubble from './MessageBubble';
+import Toast from './Toast';
 
 
 /**
@@ -19,7 +20,7 @@ import MessageBubble from './MessageBubble';
  * ------------------------------------------------------------------
  */
 
-const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles }) => {
+const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles, showToast }) => {
     const fileInputRef = useRef(null);
     const [isUploading, setIsUploading] = useState(false);
 
@@ -33,7 +34,7 @@ const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles 
             }
         } catch (error) {
             console.error("Failed to delete document:", error);
-            // Optionally add a toast or error message here
+            showToast("Failed to delete document", "error");
         }
     };
 
@@ -54,6 +55,28 @@ const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles 
     const handleFileChange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+
+        // Check file size (10MB limit)
+        const MAX_SIZE = 10 * 1024 * 1024; // 10MB
+        if (file.size >= MAX_SIZE) {
+            showToast("File size must be less than 10MB", "error");
+            // Reset input
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+            return;
+        }
+
+        // Check file type
+        const allowedExtensions = ['pdf', 'doc', 'docx', 'txt', 'md'];
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        if (!allowedExtensions.includes(fileExtension)) {
+            showToast("Invalid file type. Allowed: PDF, DOC, DOCX, TXT, MD", "error");
+            if (fileInputRef.current) {
+                fileInputRef.current.value = '';
+            }
+            return;
+        }
 
         setIsUploading(true);
         try {
@@ -76,9 +99,14 @@ const LibrarySidebar = ({ onDocumentSelect, selectedDocumentId, files, setFiles 
             };
 
             setFiles(prev => [newFile, ...prev]);
+            showToast("Document uploaded successfully", "success");
         } catch (error) {
             console.error("Failed to upload document:", error);
-            alert("Failed to upload document. Please try again.");
+            if (error.response && error.response.status === 413) {
+                showToast("Error 413: Request Entity Too Large", "error");
+            } else {
+                showToast("Failed to upload document. Please try again.", "error");
+            }
         } finally {
             setIsUploading(false);
             // Reset input
@@ -194,7 +222,12 @@ const DocumentQuery = () => {
     const [isLoading, setIsLoading] = useState(false);
     const [messages, setMessages] = useState([]);
     const [selectedDocumentId, setSelectedDocumentId] = useState(null);
+    const [toast, setToast] = useState(null);
     const messagesEndRef = useRef(null);
+
+    const showToast = (message, type = 'info') => {
+        setToast({ message, type });
+    };
 
     // Scroll to bottom helper
     const scrollToBottom = () => {
@@ -424,6 +457,7 @@ const DocumentQuery = () => {
                 selectedDocumentId={selectedDocumentId}
                 files={files}
                 setFiles={setFiles}
+                showToast={showToast}
             />
 
             {/* Main Chat Area */}
@@ -500,6 +534,13 @@ const DocumentQuery = () => {
                     </div>
                 </div>
             </div>
+            {toast && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast(null)}
+                />
+            )}
         </div>
     );
 };
