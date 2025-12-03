@@ -1,6 +1,10 @@
 # Frontend Dockerfile
 FROM node:18-alpine as build
 
+# Accept build arguments for environment variables
+ARG VITE_SUPABASE_URL
+ARG VITE_SUPABASE_ANON_KEY
+
 WORKDIR /app
 
 # Copy package files from frontend directory
@@ -11,6 +15,10 @@ RUN npm install
 
 # Copy source code from frontend directory
 COPY frontend/ .
+
+# Set environment variables for Vite build
+ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
+ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
 # Build the application
 RUN npm run build
