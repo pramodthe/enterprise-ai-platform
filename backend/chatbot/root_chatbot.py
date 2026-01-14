@@ -66,11 +66,11 @@ class RootChatbot:
     Main conversational agent that orchestrates user interactions.
     
     The RootChatbot intelligently routes queries to specialized agents and provides 
-    responses for general queries. It uses AWS Bedrock (via Strands SDK) for 
+    responses for general queries. It uses OpenAI (via Strands SDK) for 
     language model capabilities.
     
     Attributes:
-        model: BedrockModel or AnthropicModel instance for generating responses
+        model: OpenAIModel instance for generating responses
         agent_router: AgentRouter for determining query routing
         system_prompt: System prompt for the chatbot
     """
@@ -93,7 +93,7 @@ Be professional, concise, and helpful in your responses."""
         Initialize the Root Chatbot with dependencies.
         
         Args:
-            model: BedrockModel or AnthropicModel instance for model interactions
+            model: OpenAIModel instance for model interactions
             agent_router: AgentRouter for query routing decisions
             system_prompt: Optional custom system prompt
         """

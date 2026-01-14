@@ -4,8 +4,7 @@ Chatbot Factory - Manages the creation and retrieval of the RootChatbot instance
 import logging
 import os
 
-from strands.models.bedrock import BedrockModel
-from strands.models.anthropic import AnthropicModel
+from strands.models.openai import OpenAIModel
 
 from backend.agents.hr_agent import get_hr_agent_response
 from backend.agents.analytics_agent import get_analytics_response
@@ -45,56 +44,21 @@ def get_root_chatbot() -> RootChatbot:
     # Initialize router
     agent_router = AgentRouter(agents=agents)
     
-    # Initialize Model (Bedrock or Anthropic)
-    use_bedrock = os.getenv("USE_BEDROCK", "False").lower() == "true"
-    
-    if use_bedrock:
-        aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
-        aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-        region_name = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-        model_id = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
-        guardrail_id = os.getenv("BEDROCK_GUARDRAIL_ID")
-        guardrail_version = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
-        
-        if not aws_access_key_id or not aws_secret_access_key:
-            raise ValueError("AWS credentials required for Bedrock.")
-            
-        logger.info(f"Initializing BedrockModel with model_id={model_id}")
-        
-        model_params = {"temperature": 0.3}
-        if guardrail_id:
-            model_params["guardrailIdentifier"] = guardrail_id
-            model_params["guardrailVersion"] = guardrail_version
-            logger.info(f"Bedrock Guardrails enabled: {guardrail_id}")
-            
-        model = BedrockModel(
-            client_args={
-                "aws_access_key_id": aws_access_key_id,
-                "aws_secret_access_key": aws_secret_access_key,
-                "region_name": region_name,
-            },
-            max_tokens=1028,
-            model_id=model_id,
-            params=model_params
-        )
-    else:
-        # Use Anthropic API directly
-        anthropic_api_key = os.getenv("api_key")
-        model_id = os.getenv("DEFAULT_MODEL", "claude-3-7-sonnet-20250219")
-        
-        if not anthropic_api_key:
-            # Fallback to mock/error if no key (or raise error)
-            # For now, let's assume key is present or raise error
-            raise ValueError("Anthropic API key required.")
-            
-        logger.info(f"Initializing AnthropicModel with model_id={model_id}")
-        
-        model = AnthropicModel(
-            client_args={"api_key": anthropic_api_key},
-            max_tokens=1028,
-            model_id=model_id,
-            params={"temperature": 0.3}
-        )
+    # Initialize OpenAI Model
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    model_id = os.getenv("OPENAI_MODEL", os.getenv("DEFAULT_MODEL", "gpt-4o-mini"))
+
+    if not openai_api_key:
+        raise ValueError("OpenAI API key required.")
+
+    logger.info(f"Initializing OpenAIModel with model_id={model_id}")
+
+    model = OpenAIModel(
+        client_args={"api_key": openai_api_key},
+        max_tokens=1028,
+        model_id=model_id,
+        params={"temperature": 0.3},
+    )
     
     _root_chatbot = RootChatbot(
         model=model,

@@ -2,8 +2,7 @@ grpcio>=1.76.0
 strands-agents
 strands-agents-tools
 strands-agents-builder
-strands-agents[anthropic]
-strands-agents[bedrock]
+strands-agents[openai]
 strands-agents[a2a]
 mcp[cli]
 mcp-server-git
@@ -17,9 +16,10 @@ requests
 opik
 ragas
 qdrant-client
-langchain
+langchain==1.2.4
 langchain-community
 langchain-core
+langchain-openai
 langchain-text-splitters
 langchain-qdrant
 docx2txt

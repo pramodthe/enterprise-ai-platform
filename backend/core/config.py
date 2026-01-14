@@ -4,8 +4,9 @@ import os
 
 
 class Settings(BaseSettings):
-    # Anthropic API Key (for Claude models via Anthropic directly)
-    api_key: Optional[str] = os.getenv("api_key")
+    # OpenAI API Key (LLM + embeddings)
+    openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
+    openai_model: str = os.getenv("OPENAI_MODEL", os.getenv("DEFAULT_MODEL", "gpt-4o-mini"))
     
     # AWS Credentials for Bedrock (alternative to Anthropic API)
     aws_access_key_id: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
@@ -23,11 +24,11 @@ class Settings(BaseSettings):
     bedrock_guardrail_version: str = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
     
     # Document processing embeddings (Bedrock or OpenAI)
-    openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     
     # Database
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./enterprise_ai.db")
-    qdrant_url: str = os.getenv("QDRANT_URL", "http://localhost:6333")
+    qdrant_url: str = os.getenv("QDRANT_URL", "")
+    qdrant_api_key: Optional[str] = os.getenv("QDRANT_API_KEY")
     qdrant_collection_name: str = os.getenv("QDRANT_COLLECTION_NAME", "documents")
 
     
@@ -47,7 +48,7 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
     
     # Agent settings
-    default_model: str = os.getenv("DEFAULT_MODEL", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
+    default_model: str = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
     max_tokens: int = int(os.getenv("MAX_TOKENS", "1028"))
     temperature: float = float(os.getenv("TEMPERATURE", "0.3"))
     

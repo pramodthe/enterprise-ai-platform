@@ -31,47 +31,19 @@ from dotenv import load_dotenv
 load_dotenv()
 logger = logging.getLogger(__name__)
 
-USE_BEDROCK = os.getenv("USE_BEDROCK", "False").lower() == "true"
+from strands import Agent
+from strands.models.openai import OpenAIModel
 
-if USE_BEDROCK:
-    from strands import Agent
-    from strands.models.bedrock import BedrockModel
-    import boto3
+openai_api_key = os.getenv("OPENAI_API_KEY")
+if not openai_api_key:
+    raise RuntimeError("OpenAI 'OPENAI_API_KEY' environment variable is not set.")
 
-    bedrock_runtime = boto3.client(
-        "bedrock-runtime",
-        region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
-        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
-        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY")
-    )
-
-    guardrail_id = os.getenv("BEDROCK_GUARDRAIL_ID")
-    guardrail_version = os.getenv("BEDROCK_GUARDRAIL_VERSION", "1")
-    
-    model_kwargs = {
-        "max_tokens": 2048,
-        "temperature": 0.3,
-        "model_id": os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
-    }
-    
-    if guardrail_id:
-        logger.info(f"Initializing Bedrock model with guardrail: {guardrail_id} (v{guardrail_version})")
-        model_kwargs["guardrail_id"] = guardrail_id
-        model_kwargs["guardrail_version"] = guardrail_version
-        model_kwargs["guardrail_trace"] = "enabled"
-        
-    model = BedrockModel(**model_kwargs)
-
-else:
-    from strands import Agent
-    from strands.models.anthropic import AnthropicModel
-
-    model = AnthropicModel(
-        client_args={"api_key": os.getenv("api_key")},
-        max_tokens=2048,
-        params={"temperature": 0.2},
-        model_id=os.getenv("DEFAULT_MODEL", "claude-3-haiku-20240307")
-    )
+model = OpenAIModel(
+    client_args={"api_key": openai_api_key},
+    max_tokens=2048,
+    params={"temperature": 0.2},
+    model_id=os.getenv("OPENAI_MODEL", os.getenv("DEFAULT_MODEL", "gpt-4o-mini")),
+)
 
 
 # Import comprehensive business data

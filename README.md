@@ -227,14 +227,19 @@ cd frontend
 npm install
 ```
 
-### 4. Start Qdrant Vector Database
+### 4. Configure Qdrant Cloud
 
-```bash
-# Using Docker
-docker run -d -p 6333:6333 --name qdrant qdrant/qdrant
+Use your Qdrant Cloud cluster credentials:
 
-# Or using Docker Compose (recommended)
-docker-compose up -d qdrant
+```python
+from qdrant_client import QdrantClient
+
+qdrant_client = QdrantClient(
+    url="https://<waiting-for-cluster-host>:6333",
+    api_key=API_KEY,
+)
+
+print(qdrant_client.get_collections())
 ```
 
 ---
@@ -266,10 +271,6 @@ BEDROCK_GUARDRAIL_VERSION=1
 # Alternative: Anthropic API (if not using Bedrock)
 # USE_BEDROCK=False
 # api_key=your_anthropic_api_key_here
-
-# Qdrant Vector Database
-QDRANT_URL=http://localhost:6333
-QDRANT_COLLECTION_NAME=documents
 
 # Optional: Observability
 ENABLE_TRACING=false
@@ -318,7 +319,7 @@ Access the application:
 - **Frontend**: http://localhost:80
 - **Backend API**: http://localhost:8000
 - **API Docs**: http://localhost:8000/docs
-- **Qdrant Dashboard**: http://localhost:6333/dashboard
+- **Qdrant Cloud**: use your Qdrant Cloud dashboard
 
 ### Option 2: Manual Start (Development)
 
@@ -681,15 +682,15 @@ pip install -r requirements.txt --force-reinstall
 ```
 
 **Issue**: Qdrant connection error
-```bash
-# Check if Qdrant is running
-docker ps | grep qdrant
+```python
+from qdrant_client import QdrantClient
 
-# Restart Qdrant
-docker restart qdrant
+qdrant_client = QdrantClient(
+    url="https://<waiting-for-cluster-host>:6333",
+    api_key=Qdrant_API_KEY,
+)
 
-# Check logs
-docker logs qdrant
+print(qdrant_client.get_collections())
 ```
 
 **Issue**: AWS Bedrock authentication error
@@ -721,7 +722,6 @@ tail -f logs/app.log
 # Docker logs
 docker-compose logs -f backend
 docker-compose logs -f frontend
-docker-compose logs -f qdrant
 ```
 
 ---

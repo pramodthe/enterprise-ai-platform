@@ -7,12 +7,7 @@ from langchain_aws import BedrockEmbeddings
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.embeddings import HuggingFaceEmbeddings
 
-from .config import (
-    AWS_ACCESS_KEY_ID,
-    AWS_SECRET_ACCESS_KEY,
-    AWS_REGION,
-    OPENAI_API_KEY,
-)
+from backend.core.config import settings
 
 
 def create_embedding_model() -> Any:
@@ -23,14 +18,14 @@ def create_embedding_model() -> Any:
       3. HuggingFace local embeddings (final fallback)
     """
     # Try Bedrock first
-    if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY:
+    if settings.aws_access_key_id and settings.aws_secret_access_key:
         import boto3
 
         bedrock_client = boto3.client(
             "bedrock-runtime",
-            region_name=AWS_REGION,
-            aws_access_key_id=AWS_ACCESS_KEY_ID,
-            aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+            region_name=settings.aws_default_region,
+            aws_access_key_id=settings.aws_access_key_id,
+            aws_secret_access_key=settings.aws_secret_access_key,
         )
 
         return BedrockEmbeddings(
@@ -38,9 +33,9 @@ def create_embedding_model() -> Any:
             model_id="amazon.titan-embed-text-v2:0",
         )
     # Try OpenAI next
-    elif OPENAI_API_KEY:
+    elif settings.openai_api_key:
         return OpenAIEmbeddings(
-            openai_api_key=OPENAI_API_KEY,
+            openai_api_key=settings.openai_api_key,
             model="text-embedding-3-large",  # production-grade
         )
     # Try HuggingFace last

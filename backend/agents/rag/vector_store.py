@@ -8,13 +8,13 @@ from qdrant_client.models import Distance, VectorParams
 from langchain_qdrant import QdrantVectorStore
 from langchain_core.vectorstores import VectorStore
 
-from .config import QDRANT_URL, QDRANT_COLLECTION_NAME
+from backend.core.config import settings
 
 
 def create_qdrant_client() -> QdrantClient:
     return QdrantClient(
-        url=QDRANT_URL,
-        # api_key=os.getenv("QDRANT_API_KEY")  # enable for cloud
+        url=settings.qdrant_url,
+        api_key=settings.qdrant_api_key,
     )
 
 
@@ -44,7 +44,7 @@ def ensure_collection(client: QdrantClient, embedding_model, collection_name: st
 def create_vector_store(
     embedding_model,
     client: Optional[QdrantClient] = None,
-    collection_name: str = QDRANT_COLLECTION_NAME,
+    collection_name: str = settings.qdrant_collection_name,
 ) -> VectorStore:
 
     if client is None:

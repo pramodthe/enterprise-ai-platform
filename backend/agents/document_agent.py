@@ -20,7 +20,7 @@ from backend.agents.rag.chunker import chunk_documents
 from backend.agents.rag.vector_store import create_vector_store, create_qdrant_client
 from backend.agents.rag.embedding import create_embedding_model
 from backend.agents.rag.model_loader import create_llm_model
-from backend.agents.rag.config import QDRANT_COLLECTION_NAME
+from backend.core.config import settings
 
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ class DocumentRAG:
         model=None,
         embedding_model=None,
         qdrant_client: Optional[QdrantClient] = None,
-        collection_name: str = QDRANT_COLLECTION_NAME,
+        collection_name: str = settings.qdrant_collection_name,
     ):
         self.model = model or create_llm_model()
         self.embedding_model = embedding_model or create_embedding_model()

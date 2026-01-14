@@ -20,21 +20,11 @@ else
     source .venv/bin/activate
 fi
 
-# 2. Check/Start Qdrant
-echo "🐘 Checking Qdrant Vector DB..."
-if ! command -v docker &> /dev/null; then
-    echo "❌ Docker is not installed or not in PATH. Please install Docker."
-    exit 1
-fi
-
-if docker ps | grep -q qdrant; then
-    echo "✅ Qdrant is already running."
-elif docker ps -a | grep -q qdrant; then
-    echo "🔄 Starting existing Qdrant container..."
-    docker start qdrant
+# 2. Qdrant Cloud check
+if [ -z "$QDRANT_URL" ]; then
+    echo "⚠️  QDRANT_URL is not set. Configure Qdrant Cloud in backend/.env."
 else
-    echo "🆕 Starting new Qdrant container..."
-    docker run -d -p 6333:6333 --name qdrant qdrant/qdrant
+    echo "✅ Using Qdrant Cloud at $QDRANT_URL"
 fi
 
 # Start Analytics Agent
