@@ -8,23 +8,6 @@ class Settings(BaseSettings):
     openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
     openai_model: str = os.getenv("OPENAI_MODEL", os.getenv("DEFAULT_MODEL", "gpt-4o-mini"))
     
-    # AWS Credentials for Bedrock (alternative to Anthropic API)
-    aws_access_key_id: Optional[str] = os.getenv("AWS_ACCESS_KEY_ID")
-    aws_secret_access_key: Optional[str] = os.getenv("AWS_SECRET_ACCESS_KEY")
-    aws_default_region: str = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-    
-    # Use Bedrock instead of Anthropic API
-    use_bedrock: bool = os.getenv("USE_BEDROCK", "False").lower() == "true"
-    
-    # Bedrock model ID for Claude
-    bedrock_model_id: str = os.getenv("BEDROCK_MODEL_ID", "us.anthropic.claude-3-5-haiku-20241022-v1:0")
-    
-    # Bedrock Guardrails
-    bedrock_guardrail_id: Optional[str] = os.getenv("BEDROCK_GUARDRAIL_ID")
-    bedrock_guardrail_version: str = os.getenv("BEDROCK_GUARDRAIL_VERSION", "DRAFT")
-    
-    # Document processing embeddings (Bedrock or OpenAI)
-    
     # Database
     database_url: str = os.getenv("DATABASE_URL", "sqlite:///./enterprise_ai.db")
     qdrant_url: str = os.getenv("QDRANT_URL", "")

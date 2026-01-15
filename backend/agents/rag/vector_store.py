@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
+from qdrant_client.models import Distance, VectorParams, PayloadSchemaType
 from langchain_qdrant import QdrantVectorStore
 from langchain_core.vectorstores import VectorStore
 
@@ -41,6 +41,22 @@ def ensure_collection(client: QdrantClient, embedding_model, collection_name: st
     )
 
 
+def ensure_payload_indexes(client: QdrantClient, collection_name: str) -> None:
+    """
+    Ensure payload indexes exist for fields used in filters.
+    """
+    try:
+        client.create_payload_index(
+            collection_name=collection_name,
+            field_name="metadata.doc_id",
+            field_schema=PayloadSchemaType.KEYWORD,
+        )
+    except Exception as exc:
+        message = str(exc).lower()
+        if "already exists" not in message:
+            raise
+
+
 def create_vector_store(
     embedding_model,
     client: Optional[QdrantClient] = None,
@@ -51,6 +67,7 @@ def create_vector_store(
         client = create_qdrant_client()
 
     ensure_collection(client, embedding_model, collection_name)
+    ensure_payload_indexes(client, collection_name)
 
     return QdrantVectorStore(
         client=client,

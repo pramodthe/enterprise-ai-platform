@@ -5,6 +5,7 @@ import remarkBreaks from 'remark-breaks';
 import remarkGfm from 'remark-gfm';
 import { Icons } from './Icons';
 import { ChatMessage } from './ChatMessage';
+import { DocumentResponseCard } from './DocumentResponseCard';
 import { Message, AppMode, User, PersonProfile } from '../types';
 import { chat, uploadDocument, listDocuments, deleteDocument } from '../lib/api';
 
@@ -173,6 +174,22 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
       {text}
     </ReactMarkdown>
   );
+
+  const renderDocumentResponse = (
+    answerMarkdown: string,
+    sources: Array<{ title?: string; url?: string; breadcrumbs?: string }>,
+    followUpQuestions: string[],
+    userNotices: string[]
+  ) => (
+    <DocumentResponseCard
+      answerMarkdown={answerMarkdown}
+      sources={sources}
+      followUpQuestions={followUpQuestions}
+      userNotices={userNotices}
+      onFollowUpClick={(question) => handleSend(question)}
+      isLatest
+    />
+  );
   const getInitialMessages = () => {
     switch(mode) {
       case 'analytics': return ANALYTICS_MESSAGES;
@@ -189,6 +206,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
   const [isClearDialogOpen, setIsClearDialogOpen] = useState(false);
   const [attachedFiles, setAttachedFiles] = useState<UploadedFile[]>([]);
   const [documents, setDocuments] = useState<Array<{ id: string; name: string; uploaded_at: string }>>([]);
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -197,6 +215,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
   useEffect(() => {
     setMessages(getInitialMessages());
     setAttachedFiles([]);
+    setSelectedDocumentId(null);
     if (mode === 'docs') {
       loadDocuments();
     }
@@ -214,7 +233,11 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
     try {
       const token = await getToken();
       const { documents } = await listDocuments(token ?? undefined);
-      setDocuments(documents || []);
+      const normalizedDocs = documents || [];
+      setDocuments(normalizedDocs);
+      if (selectedDocumentId && !normalizedDocs.some((doc) => doc.id === selectedDocumentId)) {
+        setSelectedDocumentId(null);
+      }
     } catch (error) {
       console.error('Failed to load documents:', error);
     }
@@ -248,6 +271,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
     try {
       const token = await getToken();
       await deleteDocument(docId, token ?? undefined);
+      if (selectedDocumentId === docId) {
+        setSelectedDocumentId(null);
+      }
       await loadDocuments();
     } catch (error) {
       console.error('Failed to delete document:', error);
@@ -262,9 +288,14 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
     setAttachedFiles([]);
   };
 
+  const toggleDocumentSelection = (docId: string) => {
+    setSelectedDocumentId((prev) => (prev === docId ? null : docId));
+  };
+
   const handleSend = async (text?: string) => {
     const currentInput = typeof text === 'string' ? text : inputValue;
     if (!currentInput.trim() || isLoading) return;
+    if (mode === 'docs' && !selectedDocumentId) return;
 
     setInputValue('');
 
@@ -280,26 +311,34 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
 
     try {
       const token = await getToken();
-      const { text, people } = await chat(
+      const { text, people, isDocumentResponse, documentSources, followUpQuestions, userNotices } = await chat(
         mode,
         currentInput,
         token ?? undefined,
-        mode === 'hr' ? hrSessionIdRef.current : undefined
+        mode === 'hr' ? hrSessionIdRef.current : undefined,
+        mode === 'docs' ? selectedDocumentId : undefined
       );
 
       const aiMsg: Message = {
         id: crypto.randomUUID(),
         sender: 'ai',
         timestamp: new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }),
-        content: people && people.length > 0
-          ? (
-            <div>
-              {text && <div className="mb-2">{renderMarkdownText(text)}</div>}
-              {renderPeopleCards(people)}
-            </div>
-          )
-          : text,
-        type: 'text'
+        content: isDocumentResponse
+          ? renderDocumentResponse(
+              text,
+              documentSources || [],
+              followUpQuestions || [],
+              userNotices || []
+            )
+          : people && people.length > 0
+            ? (
+              <div>
+                {text && <div className="mb-2">{renderMarkdownText(text)}</div>}
+                {renderPeopleCards(people)}
+              </div>
+            )
+            : text,
+        type: isDocumentResponse ? 'doc' : 'text'
       };
       setMessages(prev => [...prev, aiMsg]);
 
@@ -330,6 +369,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
 
   const activeQueries = mode === 'hr' ? HR_QUERIES : mode === 'analytics' ? ANALYTICS_QUERIES : [];
   const shouldShowQueries = activeQueries.length > 0 && messages.length <= 1;
+  const canSend = !!inputValue.trim() && !isLoading && (mode !== 'docs' || !!selectedDocumentId);
 
   return (
     <div className="w-full h-full flex overflow-hidden">
@@ -347,7 +387,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
             </div>
             {(attachedFiles.length > 0 || documents.length > 0) && (
               <button
-                onClick={() => { setAttachedFiles([]); setDocuments([]); }}
+                onClick={() => { setAttachedFiles([]); setDocuments([]); setSelectedDocumentId(null); }}
                 className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded transition-colors"
               >
                 Clear all
@@ -363,8 +403,15 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
                </div>
              ) : (
                <>
-                {documents.map((doc) => (
-                  <div key={doc.id} className="group relative bg-white/60 border border-white/40 rounded-lg p-3 shadow-sm hover:shadow-md transition-all">
+                {documents.map((doc) => {
+                  const isSelected = doc.id === selectedDocumentId;
+                  return (
+                  <div
+                    key={doc.id}
+                    onClick={() => toggleDocumentSelection(doc.id)}
+                    className={`group relative bg-white/60 border border-white/40 rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-pointer ${isSelected ? 'ring-2 ring-orange-400/60 bg-orange-50/40' : ''}`}
+                    title={isSelected ? 'Selected document' : 'Select document'}
+                  >
                     <div className="flex items-start gap-3">
                       <div className="w-8 h-8 bg-red-50 rounded flex items-center justify-center flex-shrink-0 border border-red-100">
                         <Icons.FileText className="w-4 h-4 text-red-500" />
@@ -375,14 +422,18 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
                       </div>
                     </div>
                     <button
-                      onClick={() => handleDeleteDocument(doc.id)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        handleDeleteDocument(doc.id);
+                      }}
                       className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-100/80 rounded-md transition-all"
                       title="Remove file"
                     >
                       <Icons.Trash className="w-3.5 h-3.5" />
                     </button>
                   </div>
-                ))}
+                );
+                })}
                 {attachedFiles.map((file, idx) => (
                   <div key={`att-${idx}`} className="group relative bg-white/60 border border-white/40 rounded-lg p-3 shadow-sm hover:shadow-md transition-all">
                     <div className="flex items-start gap-3">
@@ -479,7 +530,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
                 <Icons.Sparkles className={`w-4 h-4 transition-colors ${isFocused ? 'text-gray-900' : 'text-gray-500'}`} />
                 <input
                   type="text"
-                  placeholder={mode === 'hr' ? "Ask about employees..." : mode === 'docs' ? "Search documents or ask questions..." : "Ask me anything..."}
+                  placeholder={mode === 'hr' ? "Ask about employees..." : mode === 'docs' ? (selectedDocumentId ? "Search documents or ask questions..." : "Select a document from the library to start...") : "Ask me anything..."}
                   className="w-full text-gray-900 placeholder-gray-500 outline-none text-sm py-2 bg-transparent font-medium"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
@@ -492,8 +543,8 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
 
               <button
                 onClick={() => handleSend()}
-                disabled={isLoading || !inputValue.trim()}
-                className={`flex items-center gap-2 bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-md hover:bg-black transition-all shadow-lg shadow-gray-200/50 ${isLoading || !inputValue.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                disabled={!canSend}
+                className={`flex items-center gap-2 bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-md hover:bg-black transition-all shadow-lg shadow-gray-200/50 ${!canSend ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <Icons.CornerDownRight className="w-3 h-3" />
                 Send
               </button>

@@ -8,7 +8,7 @@ export interface Message {
   sender: 'user' | 'ai';
   timestamp: string;
   content: ReactNode; // Can be text or complex components
-  type?: 'text' | 'metrics' | 'file';
+  type?: 'text' | 'metrics' | 'file' | 'doc';
 }
 
 export type User = UserResource;

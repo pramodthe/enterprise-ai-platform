@@ -9,8 +9,12 @@ def get_supabase_client() -> Client:
     """
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.")
-    
-    return create_client(settings.supabase_url, settings.supabase_service_role_key)
+
+    base_url = settings.supabase_url
+    if not base_url.endswith("/"):
+        base_url = f"{base_url}/"
+
+    return create_client(base_url, settings.supabase_service_role_key)
 
 def upload_file_to_storage(file_content: bytes, filename: str, bucket_name: str = "documents") -> str:
     """

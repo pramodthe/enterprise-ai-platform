@@ -12,6 +12,15 @@ interface ChatMessageProps {
 export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isAI = message.sender === 'ai';
   const isMarkdown = typeof message.content === 'string';
+  const isDocResponse = message.type === 'doc';
+
+  if (isDocResponse) {
+    return (
+      <div className="w-full animate-in fade-in duration-500 slide-in-from-bottom-2">
+        {message.content}
+      </div>
+    );
+  }
 
   return (
     <div className="w-full animate-in fade-in duration-500 slide-in-from-bottom-2 group">
