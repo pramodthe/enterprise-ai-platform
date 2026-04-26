@@ -28,21 +28,24 @@ import matplotlib.pyplot as plt
 
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 logger = logging.getLogger(__name__)
 
 from strands import Agent
 from strands.models.openai import OpenAIModel
 
-openai_api_key = os.getenv("OPENAI_API_KEY")
-if not openai_api_key:
+from backend.core.config import settings, get_openai_client_args
+
+if not settings.openai_api_key:
     raise RuntimeError("OpenAI 'OPENAI_API_KEY' environment variable is not set.")
 
 model = OpenAIModel(
-    client_args={"api_key": openai_api_key},
-    max_tokens=2048,
-    params={"temperature": 0.2},
-    model_id=os.getenv("OPENAI_MODEL", os.getenv("DEFAULT_MODEL", "gpt-4o-mini")),
+    client_args=get_openai_client_args(),
+    model_id=settings.openai_model,
+    params={
+        "temperature": 0.2,
+        "max_tokens": min(settings.openai_max_tokens, 24576),
+    },
 )
 
 
@@ -170,6 +173,37 @@ def generate_chart_tool(data: list, chart_type: str = "line", x: str = None, y: 
         raise ValueError(error_msg)
 
 ANALYTICS_TOOLS = [add, subtract, multiply, divide, calculate_average, percent_change, query_data_tool, generate_chart_tool]
+
+
+def _format_chart_payload_as_markdown(payload: dict) -> str:
+    """
+    Turn chart JSON into markdown so the frontend (react-markdown) can render the image.
+    Raw json.dumps was shown as a literal string in <p> tags.
+    """
+    parts: list[str] = []
+    b64 = payload.get("image_base64")
+    fmt = (payload.get("format") or "png").lower().strip()
+    if fmt not in ("png", "jpeg", "jpg", "webp"):
+        fmt = "png"
+    mime = "image/jpeg" if fmt in ("jpg", "jpeg") else f"image/{fmt}"
+    desc = (payload.get("description") or "Chart").strip().replace("]", "").replace("[", "")
+    if b64:
+        parts.append(f"![{desc}](data:{mime};base64,{b64})")
+
+    analysis = payload.get("analysis")
+    if isinstance(analysis, dict) and analysis:
+        parts.append("\n### Key metrics\n")
+        for key, val in analysis.items():
+            label = str(key).replace("_", " ").strip().title()
+            parts.append(f"- **{label}:** {val}")
+
+    report = payload.get("report")
+    if isinstance(report, str) and report.strip():
+        parts.append("\n\n")
+        parts.append(report.strip())
+
+    out = "\n".join(parts).strip()
+    return out if out else json.dumps(payload)
 
 
 def _get_analytics_response_impl(query: str):
@@ -387,7 +421,7 @@ def _get_analytics_response_impl(query: str):
                     
                     result['report'] = '\n'.join(report_lines)
             
-            return json.dumps(result), {}
+            return _format_chart_payload_as_markdown(result), {}
             
         except Exception as e:
             logger.error(f"Direct chart generation failed: {e}")
@@ -432,8 +466,16 @@ Example: "Calculate average monthly revenue"
             return str(response), {}
             
         response_str = str(response).strip()
-        
         logger.info(f"Agent response: {response_str[:200]}")
+
+        if response_str.startswith("{") and "image_base64" in response_str:
+            try:
+                obj = json.loads(response_str)
+                if isinstance(obj, dict) and obj.get("image_base64"):
+                    return _format_chart_payload_as_markdown(obj), {}
+            except json.JSONDecodeError:
+                pass
+
         return response_str, {}
 
     except Exception as e:

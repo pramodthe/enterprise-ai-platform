@@ -79,7 +79,6 @@ class RootChatbot:
 You can help with general questions and coordinate with specialized agents for:
 - HR queries (employee information, organizational structure, skills)
 - Analytics queries (calculations, data analysis, reporting)
-- Document queries (policies, procedures, guidelines)
 
 Be professional, concise, and helpful in your responses."""
     

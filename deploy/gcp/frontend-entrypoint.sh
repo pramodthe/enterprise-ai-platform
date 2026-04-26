@@ -1,0 +1,20 @@
+#!/bin/sh
+set -e
+LISTEN="${PORT:-8080}"
+
+cat > /etc/nginx/conf.d/default.conf <<EOF
+server {
+    listen ${LISTEN};
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml;
+
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+EOF
+
+exec nginx -g "daemon off;"

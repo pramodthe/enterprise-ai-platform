@@ -1,13 +1,52 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useAuth } from '@clerk/clerk-react';
 import ReactMarkdown from 'react-markdown';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
+import {
+  chatMarkdownComponents,
+  chatMarkdownRemarkPlugins,
+  dataImageUrlTransform,
+  splitLeadingDataImageMarkdown,
+} from '../lib/markdownRendering';
 import { Icons } from './Icons';
 import { ChatMessage } from './ChatMessage';
 import { DocumentResponseCard } from './DocumentResponseCard';
-import { Message, AppMode, User, PersonProfile } from '../types';
+import { Message, AppMode, PersonProfile } from '../types';
 import { chat, uploadDocument, listDocuments, deleteDocument } from '../lib/api';
+
+/** True when fetch never reached the app (proxy down, wrong host, offline). */
+function isLikelyNetworkFailure(err: unknown): boolean {
+  const raw = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    raw.includes('failed to fetch') ||
+    raw.includes('networkerror') ||
+    raw.includes('load failed') ||
+    raw.includes('err_connection_refused') ||
+    raw.includes('aborted')
+  );
+}
+
+/** Prefer FastAPI `detail` and strip noisy wrappers so 401/500 are visible in chat. */
+function formatChatApiError(err: unknown): string | null {
+  const raw = (err instanceof Error ? err.message : String(err)).trim();
+  if (!raw) return null;
+  try {
+    const j = JSON.parse(raw) as { detail?: unknown };
+    if (typeof j.detail === 'string' && j.detail.trim()) {
+      let d = j.detail.trim();
+      const prefixes = [
+        'Error processing HR query: ',
+        'Error processing analytics query: ',
+        'Error processing query: ',
+      ];
+      for (const p of prefixes) {
+        if (d.startsWith(p)) d = d.slice(p.length).trim();
+      }
+      return d.length > 800 ? `${d.slice(0, 800)}…` : d;
+    }
+  } catch {
+    /* not JSON */
+  }
+  return raw.length > 800 ? `${raw.slice(0, 800)}…` : raw;
+}
 
 // -- Pre-defined initial states for different modes --
 
@@ -56,6 +95,25 @@ const DOCS_MESSAGES: Message[] = [
   }
 ];
 
+const ARC_MARKETPLACE_MESSAGES: Message[] = [
+  {
+    id: 'init-arc-marketplace',
+    sender: 'ai',
+    timestamp: 'Just now',
+    content: (
+      <div className="flex flex-col gap-2">
+        <p>Hello! Welcome to <strong>Arc_Marketplace</strong>.</p>
+        <p>
+          Chat here uses the <strong>autonomous LLM buyer</strong> demo API (<code className="rounded bg-gray-100 px-1 text-xs">POST …/demo/autonomous-llm-buyer/chat</code>).
+          Run the example <code className="rounded bg-gray-100 px-1 text-xs">chat_server.py</code> (default port 9095); in dev the UI proxies via{' '}
+          <code className="rounded bg-gray-100 px-1 text-xs">/autonomous-buyer-proxy</code> unless you set <code className="rounded bg-gray-100 px-1 text-xs">VITE_AUTONOMOUS_BUYER_CHAT_URL</code>.
+        </p>
+      </div>
+    ),
+    type: 'text'
+  }
+];
+
 const HR_QUERIES = [
   "Find employees with Python skills",
   "Show organizational chart for Engineering",
@@ -74,6 +132,15 @@ const ANALYTICS_QUERIES = [
   "Calculate 15% growth on $1.2M revenue"
 ];
 
+const ARC_MARKETPLACE_QUERIES = [
+  'Find a demo tool and invoke it once.',
+  'List marketplace capabilities I can try.',
+  'What agents or integrations are available?',
+  'Search for a template and summarize it.',
+  'Plan a short evaluation of two tools.',
+  'What should I buy or enable next for my team?',
+];
+
 interface UploadedFile {
   name: string;
   data: string;
@@ -83,11 +150,9 @@ interface UploadedFile {
 interface ChatInterfaceProps {
   mode: AppMode;
   onBack: () => void;
-  user: User | null;
 }
 
-export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user }) => {
-  const { getToken } = useAuth();
+export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack }) => {
   const getInitials = (name: string) => name.split(' ').map(part => part[0]).join('').slice(0, 2).toUpperCase();
 
   const renderPeopleCards = (people: PersonProfile[]) => (
@@ -135,45 +200,21 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
       ))}
     </div>
   );
-  const renderMarkdownText = (text: string) => (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm, remarkBreaks]}
-      className="max-w-none"
-      components={{
-        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-        ul: ({ children }) => <ul className="my-2 list-disc pl-5 space-y-1">{children}</ul>,
-        ol: ({ children }) => <ol className="my-2 list-decimal pl-5 space-y-1">{children}</ol>,
-        li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-        a: ({ children, ...props }) => (
-          <a
-            className="text-blue-600 hover:text-blue-700 underline"
-            target="_blank"
-            rel="noreferrer"
-            {...props}
-          >
-            {children}
-          </a>
-        ),
-        code: ({ children, ...props }) => (
-          <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-900 text-xs" {...props}>
-            {children}
-          </code>
-        ),
-        pre: ({ children }) => (
-          <pre className="my-2 rounded-lg bg-slate-900 text-slate-100 text-xs p-3 overflow-x-auto">
-            {children}
-          </pre>
-        ),
-        blockquote: ({ children }) => (
-          <blockquote className="border-l-2 border-slate-300 pl-3 my-2 text-slate-600">
-            {children}
-          </blockquote>
-        ),
-      }}
-    >
-      {text}
-    </ReactMarkdown>
-  );
+  const renderMarkdownText = (text: string) => {
+    const { imageBlock, body } = splitLeadingDataImageMarkdown(text);
+    const mdProps = {
+      remarkPlugins: chatMarkdownRemarkPlugins,
+      className: 'max-w-none text-gray-800',
+      urlTransform: dataImageUrlTransform,
+      components: chatMarkdownComponents,
+    } as const;
+    return (
+      <>
+        {imageBlock ? <ReactMarkdown {...mdProps}>{imageBlock}</ReactMarkdown> : null}
+        <ReactMarkdown {...mdProps}>{imageBlock ? body : text}</ReactMarkdown>
+      </>
+    );
+  };
 
   const renderDocumentResponse = (
     answerMarkdown: string,
@@ -195,6 +236,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
       case 'analytics': return ANALYTICS_MESSAGES;
       case 'hr': return HR_MESSAGES;
       case 'docs': return DOCS_MESSAGES;
+      case 'arc_marketplace': return ARC_MARKETPLACE_MESSAGES;
       default: return [];
     }
   };
@@ -208,6 +250,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
   const [documents, setDocuments] = useState<Array<{ id: string; name: string; uploaded_at: string }>>([]);
   const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [includeAutonomousBuyerTrace, setIncludeAutonomousBuyerTrace] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const hrSessionIdRef = useRef<string>(crypto.randomUUID());
@@ -216,9 +259,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
     setMessages(getInitialMessages());
     setAttachedFiles([]);
     setSelectedDocumentId(null);
-    if (mode === 'docs') {
-      loadDocuments();
-    }
+    setIncludeAutonomousBuyerTrace(false);
   }, [mode]);
 
   useEffect(() => {
@@ -231,8 +272,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
 
   const loadDocuments = async () => {
     try {
-      const token = await getToken();
-      const { documents } = await listDocuments(token ?? undefined);
+      const { documents } = await listDocuments();
       const normalizedDocs = documents || [];
       setDocuments(normalizedDocs);
       if (selectedDocumentId && !normalizedDocs.some((doc) => doc.id === selectedDocumentId)) {
@@ -248,8 +288,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
     if (file && file.type === 'application/pdf') {
       setIsUploading(true);
       try {
-        const token = await getToken();
-        await uploadDocument(file, token ?? undefined);
+        await uploadDocument(file);
         await loadDocuments();
       } catch (error) {
         console.error('Upload failed:', error);
@@ -269,8 +308,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
 
   const handleDeleteDocument = async (docId: string) => {
     try {
-      const token = await getToken();
-      await deleteDocument(docId, token ?? undefined);
+      await deleteDocument(docId);
       if (selectedDocumentId === docId) {
         setSelectedDocumentId(null);
       }
@@ -295,7 +333,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
   const handleSend = async (text?: string) => {
     const currentInput = typeof text === 'string' ? text : inputValue;
     if (!currentInput.trim() || isLoading) return;
-    if (mode === 'docs' && !selectedDocumentId) return;
+    if (mode === 'docs') return;
 
     setInputValue('');
 
@@ -310,14 +348,26 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
     setIsLoading(true);
 
     try {
-      const token = await getToken();
-      const { text, people, isDocumentResponse, documentSources, followUpQuestions, userNotices } = await chat(
-        mode,
-        currentInput,
-        token ?? undefined,
-        mode === 'hr' ? hrSessionIdRef.current : undefined,
-        mode === 'docs' ? selectedDocumentId : undefined
-      );
+      const { text, people, isDocumentResponse, documentSources, followUpQuestions, userNotices, autonomousBuyerMeta } =
+        await chat(
+          mode,
+          currentInput,
+          undefined,
+          mode === 'hr' ? hrSessionIdRef.current : undefined,
+          mode === 'docs' ? selectedDocumentId : undefined,
+          mode === 'arc_marketplace' ? includeAutonomousBuyerTrace : undefined
+        );
+
+      let replyText = text;
+      if (mode === 'arc_marketplace' && autonomousBuyerMeta) {
+        const { buyerId, model } = autonomousBuyerMeta;
+        if (buyerId || model) {
+          const bits: string[] = [];
+          if (buyerId) bits.push(`Buyer \`${buyerId}\``);
+          if (model) bits.push(model);
+          replyText = `${text}\n\n---\n_${bits.join(' · ')}_`;
+        }
+      }
 
       const aiMsg: Message = {
         id: crypto.randomUUID(),
@@ -330,25 +380,38 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
               followUpQuestions || [],
               userNotices || []
             )
-          : people && people.length > 0
+            : people && people.length > 0
             ? (
               <div>
-                {text && <div className="mb-2">{renderMarkdownText(text)}</div>}
+                {replyText && <div className="mb-2">{renderMarkdownText(replyText)}</div>}
                 {renderPeopleCards(people)}
               </div>
             )
-            : text,
+            : replyText,
         type: isDocumentResponse ? 'doc' : 'text'
       };
       setMessages(prev => [...prev, aiMsg]);
 
     } catch (error) {
       console.error("Error with API:", error);
-       setMessages(prev => [...prev, {
+      const errMsg =
+        mode === 'arc_marketplace'
+          ? `Could not reach the autonomous buyer chat service. Run the example chat server (e.g. port 9095), or set VITE_AUTONOMOUS_BUYER_CHAT_URL. Details: ${error instanceof Error ? error.message : String(error)}`
+          : isLikelyNetworkFailure(error)
+            ? 'Could not reach the server. Start the API on port 8000 (`npm run backend` or `npm run dev:full` from `new_frontend`). If you opened the app via a LAN URL (not localhost), remove `VITE_API_BASE` or avoid loopback URLs so requests use the Vite proxy.'
+            : (() => {
+                const detail = formatChatApiError(error);
+                const hint =
+                  detail && /401|invalid.*api.*key|unauthorized/i.test(detail)
+                    ? '\n\n**Fix:** Set a valid `OPENAI_API_KEY` (and matching `OPENAI_BASE_URL` for your provider) in `backend/.env`, then restart the API.'
+                    : '';
+                return `**Request failed**\n\n${detail ?? (error instanceof Error ? error.message : String(error))}${hint}`;
+              })();
+      setMessages(prev => [...prev, {
         id: crypto.randomUUID(),
         sender: 'ai',
         timestamp: new Date().toLocaleDateString(),
-        content: user ? "I'm sorry, I encountered an error. Please check your connection and try again." : "Please sign in to use the AI assistant.",
+        content: errMsg,
         type: 'text'
       }]);
     } finally {
@@ -367,128 +430,33 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
     setIsClearDialogOpen(false);
   };
 
-  const activeQueries = mode === 'hr' ? HR_QUERIES : mode === 'analytics' ? ANALYTICS_QUERIES : [];
+  const activeQueries =
+    mode === 'hr' ? HR_QUERIES : mode === 'analytics' ? ANALYTICS_QUERIES : mode === 'arc_marketplace' ? ARC_MARKETPLACE_QUERIES : [];
   const shouldShowQueries = activeQueries.length > 0 && messages.length <= 1;
   const canSend = !!inputValue.trim() && !isLoading && (mode !== 'docs' || !!selectedDocumentId);
 
   return (
     <div className="w-full h-full flex overflow-hidden">
-
-      {/* Sidebar - Visible only in Docs mode */}
-      {mode === 'docs' && (
-        <div className="w-80 flex-shrink-0 bg-white/40 backdrop-blur-xl border-r border-white/40 flex flex-col animate-in slide-in-from-left-5 duration-500 z-30">
-          <div className="p-6 border-b border-white/40 flex items-start justify-between">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
-                <Icons.Library className="w-5 h-5 text-orange-600" />
-                Knowledge Base
-              </h2>
-              <p className="text-xs text-gray-500 mt-1">Upload PDFs to chat with.</p>
+      {mode === 'docs' ? (
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 bg-[#f3f4f6] p-8">
+          <button
+            type="button"
+            onClick={onBack}
+            className="flex items-center gap-2 text-sm font-medium text-gray-600 transition-colors hover:text-gray-900"
+          >
+            <Icons.ArrowLeft className="h-4 w-4" />
+            Back to dashboard
+          </button>
+          <div className="w-full max-w-md rounded-2xl border border-amber-200/80 bg-white p-8 text-center shadow-sm">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-orange-50">
+              <Icons.Library className="h-6 w-6 text-orange-600" />
             </div>
-            {(attachedFiles.length > 0 || documents.length > 0) && (
-              <button
-                onClick={() => { setAttachedFiles([]); setDocuments([]); setSelectedDocumentId(null); }}
-                className="text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 hover:bg-red-50 rounded transition-colors"
-              >
-                Clear all
-              </button>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto p-4 space-y-3">
-             {documents.length === 0 && attachedFiles.length === 0 ? (
-               <div className="text-center py-10 px-4 border-2 border-dashed border-gray-300 rounded-xl bg-white/20">
-                 <Icons.Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                 <p className="text-sm text-gray-500">No documents yet</p>
-               </div>
-             ) : (
-               <>
-                {documents.map((doc) => {
-                  const isSelected = doc.id === selectedDocumentId;
-                  return (
-                  <div
-                    key={doc.id}
-                    onClick={() => toggleDocumentSelection(doc.id)}
-                    className={`group relative bg-white/60 border border-white/40 rounded-lg p-3 shadow-sm hover:shadow-md transition-all cursor-pointer ${isSelected ? 'ring-2 ring-orange-400/60 bg-orange-50/40' : ''}`}
-                    title={isSelected ? 'Selected document' : 'Select document'}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 bg-red-50 rounded flex items-center justify-center flex-shrink-0 border border-red-100">
-                        <Icons.FileText className="w-4 h-4 text-red-500" />
-                      </div>
-                      <div className="min-w-0 flex-1 pr-6">
-                        <p className="text-sm font-medium text-gray-800 truncate" title={doc.name}>{doc.name}</p>
-                        <p className="text-[10px] text-gray-500">PDF Document</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleDeleteDocument(doc.id);
-                      }}
-                      className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-100/80 rounded-md transition-all"
-                      title="Remove file"
-                    >
-                      <Icons.Trash className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                );
-                })}
-                {attachedFiles.map((file, idx) => (
-                  <div key={`att-${idx}`} className="group relative bg-white/60 border border-white/40 rounded-lg p-3 shadow-sm hover:shadow-md transition-all">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 bg-red-50 rounded flex items-center justify-center flex-shrink-0 border border-red-100">
-                        <Icons.FileText className="w-4 h-4 text-red-500" />
-                      </div>
-                      <div className="min-w-0 flex-1 pr-6">
-                        <p className="text-sm font-medium text-gray-800 truncate" title={file.name}>{file.name}</p>
-                        <p className="text-[10px] text-gray-500">PDF Document</p>
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => removeFile(idx)}
-                      className="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-100/80 rounded-md transition-all"
-                      title="Remove file"
-                    >
-                      <Icons.Trash className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-               </>
-             )}
-          </div>
-
-          <div className="p-4 border-t border-white/40 bg-white/20">
-             <input
-               type="file"
-               accept=".pdf"
-               className="hidden"
-               ref={fileInputRef}
-               onChange={handleFileUpload}
-             />
-             <button
-               onClick={() => fileInputRef.current?.click()}
-               disabled={isUploading}
-               className="w-full py-2.5 px-4 bg-gray-900 hover:bg-black text-white text-sm font-medium rounded-lg shadow-lg shadow-gray-200/50 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-             >
-               {isUploading ? (
-                 <>
-                   <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                   </svg>
-                   Uploading...
-                 </>
-               ) : (
-                 <>
-                   <Icons.Plus className="w-4 h-4" />
-                   Upload Document
-                 </>
-               )}
-             </button>
+            <h2 className="text-lg font-semibold text-gray-900">Doc Intelligence</h2>
+            <p className="mt-2 text-sm text-gray-600">This feature is currently not available.</p>
           </div>
         </div>
-      )}
+      ) : (
+      <>
 
       {/* Main Chat Area */}
       <div className="flex-1 h-full overflow-y-auto no-scrollbar relative flex flex-col items-center">
@@ -526,11 +494,30 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
                 </button>
               )}
 
-              <div className="flex items-center gap-3 flex-1">
-                <Icons.Sparkles className={`w-4 h-4 transition-colors ${isFocused ? 'text-gray-900' : 'text-gray-500'}`} />
+              <div className="flex items-center gap-3 flex-1 min-w-0">
+                <Icons.Sparkles className={`w-4 h-4 flex-shrink-0 transition-colors ${isFocused ? 'text-gray-900' : 'text-gray-500'}`} />
+                {mode === 'arc_marketplace' && (
+                  <label className="flex flex-shrink-0 cursor-pointer items-center gap-1.5 rounded-md border border-gray-200/80 bg-white/50 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-white/80">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 rounded border-gray-300"
+                      checked={includeAutonomousBuyerTrace}
+                      onChange={(e) => setIncludeAutonomousBuyerTrace(e.target.checked)}
+                    />
+                    Trace
+                  </label>
+                )}
                 <input
                   type="text"
-                  placeholder={mode === 'hr' ? "Ask about employees..." : mode === 'docs' ? (selectedDocumentId ? "Search documents or ask questions..." : "Select a document from the library to start...") : "Ask me anything..."}
+                  placeholder={
+                    mode === 'hr'
+                      ? "Ask about employees..."
+                      : mode === 'docs'
+                        ? (selectedDocumentId ? "Search documents or ask questions..." : "Select a document from the library to start...")
+                        : mode === 'arc_marketplace'
+                          ? "Ask about agents, integrations, or templates..."
+                          : "Ask me anything..."
+                  }
                   className="w-full text-gray-900 placeholder-gray-500 outline-none text-sm py-2 bg-transparent font-medium"
                   value={inputValue}
                   onChange={(e) => setInputValue(e.target.value)}
@@ -559,7 +546,7 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
           ))}
 
           {/* Example Queries Grid */}
-          {shouldShowQueries && user && (
+          {shouldShowQueries && (
             <div className="w-full mt-6 animate-in fade-in slide-in-from-bottom-4 duration-700 delay-150">
                <div className="flex items-center gap-2 mb-3 px-1">
                  <Icons.Sparkles className="w-3 h-3 text-purple-600" />
@@ -577,15 +564,6 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
                    </button>
                  ))}
                </div>
-            </div>
-          )}
-
-          {/* Sign in prompt for unauthenticated users */}
-          {!user && messages.length <= 1 && (
-            <div className="w-full mt-6 p-4 bg-white/40 border border-white/40 rounded-xl">
-              <p className="text-sm text-gray-600 text-center">
-                Please <span className="text-[#7c3aed] font-medium">sign in</span> to use the AI assistant.
-              </p>
             </div>
           )}
 
@@ -629,6 +607,9 @@ export const ChatInterface: React.FC<ChatInterfaceProps> = ({ mode, onBack, user
             </div>
           </div>
         </div>
+      )}
+
+      </>
       )}
 
     </div>

@@ -107,9 +107,7 @@ class LocalAgentClient(AgentClient):
             
             # Normalize response content
             if isinstance(response_content, tuple):
-                # Analytics returns (response, metadata)
-                # Document returns (answer, sources)
-                # We'll keep the second element as metadata if possible
+                # Analytics returns (response, metadata); keep the second element when dict-like
                 if len(response_content) > 1:
                     if isinstance(response_content[1], list):
                         metadata["sources"] = response_content[1]

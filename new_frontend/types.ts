@@ -1,17 +1,20 @@
 import { ReactNode } from 'react';
-import type { UserResource } from '@clerk/types';
 
-export type AppMode = 'dashboard' | 'hr' | 'analytics' | 'docs';
+export type AppMode = 'dashboard' | 'hr' | 'analytics' | 'docs' | 'arc_marketplace';
 
 export interface Message {
   id: string;
   sender: 'user' | 'ai';
   timestamp: string;
-  content: ReactNode; // Can be text or complex components
+  content: ReactNode;
   type?: 'text' | 'metrics' | 'file' | 'doc';
 }
 
-export type User = UserResource;
+/** Shown in the header; optional overrides via VITE_APP_USER_* in .env.local */
+export interface AppUser {
+  displayName: string;
+  email: string;
+}
 
 export interface PersonProfile {
   id: string;
@@ -25,10 +28,4 @@ export interface PersonProfile {
   manager?: string | null;
   avatar_url?: string | null;
   bio?: string | null;
-}
-
-export interface AuthState {
-  user: User | null;
-  session: unknown | null;
-  loading: boolean;
 }

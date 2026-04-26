@@ -29,7 +29,8 @@ import {
   File,
   Paperclip,
   LogIn,
-  LogOut
+  LogOut,
+  Store
 } from 'lucide-react';
 
 export const Icons = {
@@ -62,5 +63,6 @@ export const Icons = {
   File,
   Paperclip,
   LogIn,
-  LogOut
+  LogOut,
+  Store
 };

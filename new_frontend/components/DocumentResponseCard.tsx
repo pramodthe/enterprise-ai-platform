@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
+import {
+  chatMarkdownComponents,
+  chatMarkdownRemarkPlugins,
+  dataImageUrlTransform,
+} from '../lib/markdownRendering';
 import {
   AlertTriangle,
   ArrowRight,
@@ -45,39 +48,10 @@ export const DocumentResponseCard: React.FC<DocumentResponseCardProps> = ({
       <div className="bg-white/70 backdrop-blur-xl rounded-2xl shadow-sm border border-white/50 overflow-hidden">
         <div className="p-4 text-sm text-gray-800">
           <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkBreaks]}
+            remarkPlugins={chatMarkdownRemarkPlugins}
             className="max-w-none"
-            components={{
-              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-              ul: ({ children }) => <ul className="my-2 list-disc pl-5 space-y-1">{children}</ul>,
-              ol: ({ children }) => <ol className="my-2 list-decimal pl-5 space-y-1">{children}</ol>,
-              li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-              a: ({ children, ...props }) => (
-                <a
-                  className="text-blue-600 hover:text-blue-700 underline"
-                  target="_blank"
-                  rel="noreferrer"
-                  {...props}
-                >
-                  {children}
-                </a>
-              ),
-              code: ({ children, ...props }) => (
-                <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-900 text-xs" {...props}>
-                  {children}
-                </code>
-              ),
-              pre: ({ children }) => (
-                <pre className="my-2 rounded-lg bg-slate-900 text-slate-100 text-xs p-3 overflow-x-auto">
-                  {children}
-                </pre>
-              ),
-              blockquote: ({ children }) => (
-                <blockquote className="border-l-2 border-slate-300 pl-3 my-2 text-slate-600">
-                  {children}
-                </blockquote>
-              ),
-            }}
+            urlTransform={dataImageUrlTransform}
+            components={chatMarkdownComponents}
           >
             {answerMarkdown}
           </ReactMarkdown>

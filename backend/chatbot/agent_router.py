@@ -95,21 +95,6 @@ class AgentRouter:
             "aggregate", "summarize", "summary", "breakdown", "distribution",
             "maximum", "minimum", "highest", "lowest", "top", "bottom"
         },
-        "document": {
-            # Document types
-            "policy", "policies", "document", "documents", "handbook", "manual",
-            "procedure", "procedures", "guideline", "guidelines", "protocol",
-            "standard", "standards", "regulation", "regulations",
-            # Document actions
-            "reference",
-            # Document content
-            "rule", "rules", "requirement", "requirements", "compliance",
-            "code of conduct", "ethics", "legal", "contract", "agreement",
-            "form", "forms", "template", "templates",
-            # Specific document areas
-            "hr policy", "company policy", "employee handbook", "safety",
-            "security", "privacy", "confidentiality", "intellectual property"
-        }
     }
     
     def __init__(

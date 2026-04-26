@@ -5,12 +5,12 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:full": "concurrently -k -n web,api -c blue,green \"vite\" \"cd .. && ./backend/.venv/bin/uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "backend": "cd .. && ./backend/.venv/bin/uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000"
   },
   "dependencies": {
-    "@clerk/clerk-react": "^5.20.2",
-    "@google/genai": "^1.35.0",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
@@ -21,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^9.2.1",
     "typescript": "~5.8.2",
     "vite": "^6.2.0"
   }

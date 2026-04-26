@@ -631,6 +631,10 @@ app.include_router(my_agent.router, prefix="/api/v1", tags=["my-agent"])
 
 ## Deployment
 
+### Google Cloud Run
+
+Use the Dockerfiles at the repository root (`backend/Dockerfile`, `new_frontend/Dockerfile`), Artifact Registry, and Cloud Run. Full steps, `gcloud` examples, and Cloud Build configs are in [`deploy/gcp/README.md`](deploy/gcp/README.md).
+
 ### Production Deployment with Docker
 
 ```bash

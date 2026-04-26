@@ -1,49 +1,103 @@
-from pydantic_settings import BaseSettings
-from typing import Optional
-import os
+from pathlib import Path
+from typing import Any, Optional
+
+from pydantic import AliasChoices, Field, field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Always load `backend/.env` regardless of process cwd (e.g. `npm run backend` from repo root).
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 
 class Settings(BaseSettings):
-    # OpenAI API Key (LLM + embeddings)
-    openai_api_key: Optional[str] = os.getenv("OPENAI_API_KEY")
-    openai_model: str = os.getenv("OPENAI_MODEL", os.getenv("DEFAULT_MODEL", "gpt-4o-mini"))
-    
-    # Database
-    database_url: str = os.getenv("DATABASE_URL", "sqlite:///./enterprise_ai.db")
-    qdrant_url: str = os.getenv("QDRANT_URL", "")
-    qdrant_api_key: Optional[str] = os.getenv("QDRANT_API_KEY")
-    qdrant_collection_name: str = os.getenv("QDRANT_COLLECTION_NAME", "documents")
+    """Runtime settings loaded from `backend/.env` (when present)."""
 
-    
-    # Supabase
-    supabase_url: Optional[str] = os.getenv("SUPABASE_URL")
-    supabase_key: Optional[str] = os.getenv("SUPABASE_KEY")
-    supabase_service_role_key: Optional[str] = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    
-    # Observability - Opik
-    enable_tracing: bool = os.getenv("ENABLE_TRACING", "False").lower() == "true"
-    opik_api_key: Optional[str] = os.getenv("OPIK_API_KEY")
-    opik_workspace: Optional[str] = os.getenv("OPIK_WORKSPACE")
-    
-    # Application
-    app_name: str = "Enterprise AI Assistant Platform"
-    debug: bool = os.getenv("DEBUG", "False").lower() == "true"
-    api_v1_prefix: str = "/api/v1"
-    
-    # Agent settings
-    default_model: str = os.getenv("DEFAULT_MODEL", "gpt-4o-mini")
-    max_tokens: int = int(os.getenv("MAX_TOKENS", "1028"))
-    temperature: float = float(os.getenv("TEMPERATURE", "0.3"))
-    
-    # Agent URLs
-    employee_mcp_url: Optional[str] = os.getenv("EMPLOYEE_MCP_URL")
-    employee_agent_url: Optional[str] = os.getenv("EMPLOYEE_AGENT_URL")
-    hr_agent_port: int = int(os.getenv("HR_AGENT_PORT", "8000"))
-    analytics_mcp_url: Optional[str] = os.getenv("ANALYTICS_MCP_URL")
+    model_config = SettingsConfigDict(
+        env_file=_BACKEND_ROOT / ".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        env_ignore_empty=True,
+    )
 
-    class Config:
-        env_file = ".env"
-        extra = "ignore"
+    # Comma-separated origins for browser clients (e.g. https://app-xxx.run.app).
+    # Use * only for local/dev; production should list the UI origin(s).
+    cors_allow_origins: str = Field(
+        default="*",
+        validation_alias=AliasChoices("CORS_ALLOW_ORIGINS"),
+    )
+
+    openai_api_key: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("OPENAI_API_KEY", "FIREWORKS_API_KEY"),
+    )
+    # When unset, resolve_openai_base_url() defaults to Fireworks. Set explicitly for OpenAI Platform.
+    openai_base_url: Optional[str] = None
+    openai_model: str = "accounts/fireworks/models/minimax-m2p7"
+    openai_max_tokens: int = 8192
+    openai_temperature: float = 0.6
+
+    openai_embeddings_api_key: Optional[str] = None
+    openai_embeddings_base_url: Optional[str] = None
+
+    @field_validator("openai_api_key", mode="before")
+    @classmethod
+    def normalize_openai_api_key(cls, v: Any) -> Any:
+        """Strip whitespace and wrapping quotes — common .env mistakes cause 401."""
+        if v is None:
+            return None
+        if not isinstance(v, str):
+            return v
+        t = v.strip()
+        if len(t) >= 2 and t[0] == t[-1] and t[0] in ("'", '"'):
+            t = t[1:-1].strip()
+        return t or None
+
+    @field_validator("openai_base_url", mode="before")
+    @classmethod
+    def strip_openai_base_url(cls, v: Any) -> Any:
+        """Keep `''` so `OPENAI_BASE_URL=` in .env means official OpenAI (not Fireworks)."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return v.strip()
+        return v
+
+    @field_validator("openai_embeddings_base_url", mode="before")
+    @classmethod
+    def strip_embeddings_base_url(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            t = v.strip()
+            return t or None
+        return v
 
 
 settings = Settings()
+
+
+def cors_origins_list() -> list[str]:
+    """Split `cors_allow_origins` into a list; empty entries dropped."""
+    parts = [p.strip() for p in settings.cors_allow_origins.split(",")]
+    return [p for p in parts if p] or ["*"]
+
+
+def resolve_openai_base_url() -> Optional[str]:
+    """
+    openai_base_url unset in `backend/.env` → Fireworks (MiniMax default stack).
+    openai_base_url empty string → OpenAI SDK default (https://api.openai.com/v1).
+    Otherwise → that base URL (trimmed, no trailing slash).
+    """
+    raw = settings.openai_base_url
+    if raw is None:
+        return "https://api.fireworks.ai/inference/v1"
+    if raw == "":
+        return None
+    return raw.rstrip("/")
+
+
+def get_openai_client_args() -> dict[str, Any]:
+    if not settings.openai_api_key:
+        raise RuntimeError("OPENAI_API_KEY environment variable is not set.")
+    args: dict[str, Any] = {"api_key": settings.openai_api_key}
+    base = resolve_openai_base_url()
+    if base:
+        args["base_url"] = base
+    return args

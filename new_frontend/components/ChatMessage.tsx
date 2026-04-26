@@ -1,7 +1,11 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import remarkBreaks from 'remark-breaks';
-import remarkGfm from 'remark-gfm';
+import {
+  chatMarkdownComponents,
+  chatMarkdownRemarkPlugins,
+  dataImageUrlTransform,
+  splitLeadingDataImageMarkdown,
+} from '../lib/markdownRendering';
 import { Message } from '../types';
 import { Icons } from './Icons';
 
@@ -9,10 +13,42 @@ interface ChatMessageProps {
   message: Message;
 }
 
+/** Legacy analytics API returned raw JSON; convert so markdown + images work. */
+function coerceAnalyticsContentToMarkdown(content: string): string {
+  const t = content.trim();
+  if (!t.startsWith('{') || !t.includes('"image_base64"')) return content;
+  try {
+    const o = JSON.parse(t) as Record<string, unknown>;
+    const b64 = o.image_base64;
+    if (typeof b64 !== 'string' || !b64) return content;
+    const fmt = String(o.format || 'png').toLowerCase();
+    const mime = fmt === 'jpg' || fmt === 'jpeg' ? 'image/jpeg' : `image/${fmt === 'webp' ? 'webp' : 'png'}`;
+    const desc = String(o.description || 'Chart').replace(/[[\]]/g, '');
+    const parts: string[] = [`![${desc}](data:${mime};base64,${b64})`];
+    const analysis = o.analysis;
+    if (analysis && typeof analysis === 'object') {
+      parts.push('\n### Key metrics\n');
+      for (const [k, v] of Object.entries(analysis)) {
+        parts.push(`- **${k.replace(/_/g, ' ')}:** ${String(v)}`);
+      }
+    }
+    if (typeof o.report === 'string' && o.report.trim()) {
+      parts.push('\n\n', o.report.trim());
+    }
+    return parts.join('\n');
+  } catch {
+    return content;
+  }
+}
+
 export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
   const isAI = message.sender === 'ai';
   const isMarkdown = typeof message.content === 'string';
   const isDocResponse = message.type === 'doc';
+  const markdownSource =
+    isMarkdown && typeof message.content === 'string'
+      ? coerceAnalyticsContentToMarkdown(message.content)
+      : '';
 
   if (isDocResponse) {
     return (
@@ -49,43 +85,23 @@ export const ChatMessage: React.FC<ChatMessageProps> = ({ message }) => {
           {/* Text Content */}
           <div className="text-gray-800 text-sm leading-relaxed font-normal">
             {isMarkdown ? (
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm, remarkBreaks]}
-                className="max-w-none"
-                components={{
-                  p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                  ul: ({ children }) => <ul className="my-2 list-disc pl-5 space-y-1">{children}</ul>,
-                  ol: ({ children }) => <ol className="my-2 list-decimal pl-5 space-y-1">{children}</ol>,
-                  li: ({ children }) => <li className="leading-relaxed">{children}</li>,
-                  a: ({ children, ...props }) => (
-                    <a
-                      className="text-blue-600 hover:text-blue-700 underline"
-                      target="_blank"
-                      rel="noreferrer"
-                      {...props}
-                    >
-                      {children}
-                    </a>
-                  ),
-                  code: ({ children, ...props }) => (
-                    <code className="px-1 py-0.5 rounded bg-slate-100 text-slate-900 text-xs" {...props}>
-                      {children}
-                    </code>
-                  ),
-                  pre: ({ children }) => (
-                    <pre className="my-2 rounded-lg bg-slate-900 text-slate-100 text-xs p-3 overflow-x-auto">
-                      {children}
-                    </pre>
-                  ),
-                  blockquote: ({ children }) => (
-                    <blockquote className="border-l-2 border-slate-300 pl-3 my-2 text-slate-600">
-                      {children}
-                    </blockquote>
-                  ),
-                }}
-              >
-                {message.content}
-              </ReactMarkdown>
+              (() => {
+                const { imageBlock, body } = splitLeadingDataImageMarkdown(markdownSource);
+                const mdProps = {
+                  remarkPlugins: chatMarkdownRemarkPlugins,
+                  className: 'max-w-none text-gray-800',
+                  urlTransform: dataImageUrlTransform,
+                  components: chatMarkdownComponents,
+                } as const;
+                return (
+                  <>
+                    {imageBlock ? (
+                      <ReactMarkdown {...mdProps}>{imageBlock}</ReactMarkdown>
+                    ) : null}
+                    <ReactMarkdown {...mdProps}>{imageBlock ? body : markdownSource}</ReactMarkdown>
+                  </>
+                );
+              })()
             ) : (
               message.content
             )}

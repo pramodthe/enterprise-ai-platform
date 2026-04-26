@@ -2,17 +2,16 @@
 Chatbot Factory - Manages the creation and retrieval of the RootChatbot instance.
 """
 import logging
-import os
 
 from strands.models.openai import OpenAIModel
 
 from backend.agents.hr_agent import get_hr_agent_response
 from backend.agents.analytics_agent import get_analytics_response
-from backend.agents.document_agent import get_document_response
 
 from backend.chatbot.root_chatbot import RootChatbot
 from backend.chatbot.agent_router import AgentRouter
 from backend.chatbot.local_agent import LocalAgentClient
+from backend.core.config import settings, get_openai_client_args
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -33,31 +32,27 @@ def get_root_chatbot() -> RootChatbot:
     # Initialize local agent clients
     hr_client = LocalAgentClient("HR Assistant", get_hr_agent_response)
     analytics_client = LocalAgentClient("Analytics Assistant", get_analytics_response)
-    doc_client = LocalAgentClient("Document Assistant", get_document_response)
-    
+
     agents = {
         "hr": hr_client,
         "analytics": analytics_client,
-        "document": doc_client
     }
     
     # Initialize router
     agent_router = AgentRouter(agents=agents)
     
-    # Initialize OpenAI Model
-    openai_api_key = os.getenv("OPENAI_API_KEY")
-    model_id = os.getenv("OPENAI_MODEL", os.getenv("DEFAULT_MODEL", "gpt-4o-mini"))
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY is required.")
 
-    if not openai_api_key:
-        raise ValueError("OpenAI API key required.")
-
-    logger.info(f"Initializing OpenAIModel with model_id={model_id}")
+    logger.info(f"Initializing OpenAIModel with model_id={settings.openai_model}")
 
     model = OpenAIModel(
-        client_args={"api_key": openai_api_key},
-        max_tokens=1028,
-        model_id=model_id,
-        params={"temperature": 0.3},
+        client_args=get_openai_client_args(),
+        model_id=settings.openai_model,
+        params={
+            "temperature": settings.openai_temperature,
+            "max_tokens": settings.openai_max_tokens,
+        },
     )
     
     _root_chatbot = RootChatbot(
